@@ -150,8 +150,8 @@ def save_csv(data, path, extra_columns=None):
             writer.writerow(row)
 
 
-def load_csv(path):
-    """Read a CSV written by :func:`save_csv`.
+def load_csv(path, time_col="duration", event_col="event"):
+    """Read a CSV written by :func:`save_csv`, honoring column aliases.
 
     Returns ``(durations, events, groups, extra_columns)`` where additional
     numeric columns are collected in ``extra_columns`` by name.
@@ -159,15 +159,15 @@ def load_csv(path):
     with open(path, newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         fieldnames = list(reader.fieldnames or [])
-        missing = {"duration", "event"} - set(fieldnames)
+        missing = {time_col, event_col} - set(fieldnames)
         if missing:
             raise ValueError(f"missing required columns: {sorted(missing)}")
         extra_names = [name for name in fieldnames if name not in _CSV_COLUMNS]
         durations, events, groups = [], [], []
         extras = {name: [] for name in extra_names}
         for row in reader:
-            durations.append(float(row["duration"]))
-            events.append(bool(int(row["event"])))
+            durations.append(float(row[time_col]))
+            events.append(bool(int(row[event_col])))
             groups.append(row.get("group", ""))
             for name in extra_names:
                 extras[name].append(float(row[name]))

@@ -29,6 +29,21 @@ class SurvivalData:
         return float(np.mean(~self.events))
 
 
+@dataclass
+class PHSurvivalData:
+    """Right-censored sample from a Weibull proportional-hazards model."""
+
+    durations: np.ndarray
+    events: np.ndarray
+    covariates: np.ndarray
+    coefficients: np.ndarray
+    population_median: float
+
+    @property
+    def censor_fraction(self):
+        return float(np.mean(~self.events))
+
+
 def latent_quantile(p, shape, scale):
     """Inverse CDF of ``Weibull(shape, scale)``, the latent event quantiles."""
     return scale * (-np.log(p)) ** (1.0 / shape)
@@ -124,6 +139,69 @@ def generate_survival_data(
         durations=np.minimum(latent, censoring),
         events=(latent <= censoring),
         groups=groups,
+        population_median=float(latent_quantile(0.5, shape, scale)),
+    )
+
+
+def generate_ph_data(
+    n,
+    coefficients,
+    *,
+    covariates=None,
+    shape=1.0,
+    scale=1.0,
+    censor_fraction=0.0,
+    seed=0,
+):
+    """Draw right-censored times from a Weibull model with proportional hazards.
+
+    Latent event times satisfy
+    ``S(t | x) = exp(-(t / scale)**shape * exp(x @ beta))``, so ``coefficients``
+    are the true log hazard ratios. Covariates default to independent standard
+    normals. Independent exponential censoring is calibrated on the realized
+    latents so the expected censored share matches ``censor_fraction``.
+    """
+    if not isinstance(n, (int, np.integer)) or isinstance(n, bool) or n < 1:
+        raise ValueError("n must be a positive integer")
+    if shape <= 0 or scale <= 0:
+        raise ValueError("shape and scale must be positive")
+    if not 0.0 <= censor_fraction < 1.0:
+        raise ValueError("censor_fraction must lie in [0, 1)")
+
+    beta = np.asarray(coefficients, dtype=float).reshape(-1)
+    if beta.size < 1 or not np.all(np.isfinite(beta)):
+        raise ValueError("coefficients must be a finite non-empty vector")
+
+    rng = np.random.default_rng(seed)
+    if covariates is None:
+        X = rng.standard_normal((n, beta.size))
+    else:
+        X = np.asarray(covariates, dtype=float)
+        if X.ndim == 1:
+            X = X.reshape(-1, 1)
+        if X.shape != (n, beta.size):
+            raise ValueError("covariates must have shape (n, p) matching coefficients")
+        if not np.all(np.isfinite(X)):
+            raise ValueError("covariates must contain only finite values")
+
+    uniforms = np.clip(rng.random(n), 1e-300, None)
+    linear_pred = X @ beta
+    latent = scale * ((-np.log(uniforms)) / np.exp(linear_pred)) ** (1.0 / shape)
+
+    if censor_fraction <= 0.0:
+        censoring = np.full(n, np.inf)
+    else:
+        def excess(rate):
+            return float(np.mean(1.0 - np.exp(-rate * latent))) - censor_fraction
+
+        rate = float(brentq(excess, 1e-12, 1e6, xtol=1e-10))
+        censoring = rng.exponential(1.0 / rate, n)
+
+    return PHSurvivalData(
+        durations=np.minimum(latent, censoring),
+        events=(latent <= censoring),
+        covariates=X,
+        coefficients=np.array(beta, copy=True),
         population_median=float(latent_quantile(0.5, shape, scale)),
     )
 

@@ -7,10 +7,11 @@ import pytest
 
 from survival_kit.cli import main
 from survival_kit.concordance import concordance_index
+from survival_kit.cox import fit_cox_ph
 from survival_kit.kaplan_meier import fit_kaplan_meier
 from survival_kit.logrank import log_rank_test_groups
 from survival_kit.report import CohortSummary, format_p_value, render_report
-from survival_kit.synth import generate_survival_data, save_csv
+from survival_kit.synth import generate_ph_data, generate_survival_data, save_csv
 
 
 def test_p_value_formatting_uses_a_floor():
@@ -151,3 +152,79 @@ def test_unknown_command_and_missing_arguments_are_rejected():
     assert excinfo.value.code == 2
     with pytest.raises(SystemExit):
         main(["generate"])
+
+
+def test_cox_command_recovers_treatment_hazard_ratio(tmp_path, capsys):
+    data_path = tmp_path / "arms.csv"
+    out_path = tmp_path / "cox.csv"
+    main(
+        [
+            "generate",
+            "--n", "800",
+            "--shape", "1.2",
+            "--group-scale-ratio", "2.0",
+            "--seed", "5",
+            "--out", str(data_path),
+        ]
+    )
+    assert main(["cox", "--data", str(data_path), "--group-col", "group", "--out", str(out_path)]) == 0
+    out = capsys.readouterr().out
+    assert "group[treatment]" in out
+    assert "HR=" in out
+    assert "log partial likelihood" in out
+    with open(out_path, newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 1
+    assert rows[0]["covariate"] == "group[treatment]"
+    hr = float(rows[0]["hazard_ratio"])
+    assert hr == pytest.approx(2.0 ** (-1.2), rel=0.25)
+
+
+def test_cox_command_requires_a_design_matrix():
+    with pytest.raises(SystemExit):
+        main(["cox", "--data", "missing.csv", "--out", "cox.csv"])
+
+
+def test_report_includes_cox_section_for_grouped_data(tmp_path):
+    data_path = tmp_path / "data.csv"
+    report_path = tmp_path / "report.md"
+    main(["generate", "--n", "150", "--seed", "4", "--out", str(data_path)])
+    main(
+        ["report", "--data", str(data_path), "--group-col", "group", "--out", str(report_path)]
+    )
+    text = report_path.read_text(encoding="utf-8")
+    assert "## Cox proportional hazards" in text
+    assert "group[treatment]" in text
+    assert "Likelihood-ratio" in text
+
+
+def test_report_cox_section_from_numeric_covariates(tmp_path):
+    data_path = tmp_path / "ph.csv"
+    report_path = tmp_path / "ph.md"
+    ph = generate_ph_data(180, [0.7], seed=12)
+    dummy = generate_survival_data(180, seed=12)
+    dummy.durations = ph.durations
+    dummy.events = ph.events
+    save_csv(dummy, data_path, extra_columns={"x0": ph.covariates[:, 0]})
+    main(
+        [
+            "report",
+            "--data", str(data_path),
+            "--covariate-cols", "x0",
+            "--out", str(report_path),
+        ]
+    )
+    text = report_path.read_text(encoding="utf-8")
+    assert "## Cox proportional hazards" in text
+    assert "| x0 |" in text
+
+
+def test_render_report_optional_cox_section():
+    data = generate_survival_data(120, group_scale_ratio=2.5, seed=11)
+    cohorts = [_summary(data, "control"), _summary(data, "treatment")]
+    treated = (data.groups == "treatment").astype(float)
+    cox = fit_cox_ph(data.durations, data.events, treated, feature_names=("treated",))
+    text = render_report("Demo", cohorts, cox=cox)
+    assert "## Cox proportional hazards" in text
+    assert "treated" in text
+    assert "Log partial likelihood:" in text

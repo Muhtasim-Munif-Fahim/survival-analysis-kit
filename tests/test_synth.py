@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from survival_kit.synth import generate_survival_data, load_csv, save_csv
+from survival_kit.synth import generate_ph_data, generate_survival_data, load_csv, save_csv
 
 
 def test_same_seed_reproduces_the_sample():
@@ -81,6 +81,48 @@ def test_csv_round_trip_preserves_every_column(tmp_path):
     assert np.array_equal(events, data.events)
     assert np.array_equal(groups.astype(str), data.groups.astype(str))
     assert np.allclose(extras["score"], scores)
+
+
+def test_ph_generator_reproduces_with_the_same_seed():
+    first = generate_ph_data(80, [0.4, -0.2], seed=5)
+    second = generate_ph_data(80, [0.4, -0.2], seed=5)
+    other = generate_ph_data(80, [0.4, -0.2], seed=6)
+    assert np.array_equal(first.durations, second.durations)
+    assert np.array_equal(first.covariates, second.covariates)
+    assert not np.array_equal(first.durations, other.durations)
+
+
+def test_ph_generator_shapes_and_zero_censoring():
+    data = generate_ph_data(150, [0.3, -0.1, 0.2], shape=1.5, scale=2.0, seed=2)
+    assert data.covariates.shape == (150, 3)
+    assert data.durations.shape == (150,)
+    assert bool(np.all(data.events))
+    assert data.censor_fraction == 0.0
+    assert np.allclose(data.coefficients, [0.3, -0.1, 0.2])
+
+
+def test_ph_censor_calibration_hits_the_requested_share():
+    data = generate_ph_data(4000, [0.5, -0.4], censor_fraction=0.3, seed=5)
+    realized = float(np.mean(~data.events))
+    assert 0.26 < realized < 0.34
+
+
+def test_ph_supplied_covariates_are_honored():
+    rng = np.random.default_rng(8)
+    X = rng.normal(size=(40, 2))
+    data = generate_ph_data(40, [0.2, -0.3], covariates=X, seed=8)
+    assert np.allclose(data.covariates, X)
+
+
+def test_ph_invalid_parameters_raise():
+    with pytest.raises(ValueError):
+        generate_ph_data(0, [0.1])
+    with pytest.raises(ValueError):
+        generate_ph_data(10, [0.1], shape=0.0)
+    with pytest.raises(ValueError):
+        generate_ph_data(10, [np.nan])
+    with pytest.raises(ValueError):
+        generate_ph_data(10, [0.1], covariates=np.zeros((9, 1)))
 
 
 def test_invalid_parameters_raise():

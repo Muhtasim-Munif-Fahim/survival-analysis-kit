@@ -111,12 +111,43 @@ def render_concordance_section(result):
     )
 
 
+def render_cox_section(result, confidence_level=0.95):
+    """Coefficient table and partial-likelihood summary for a Cox PH fit."""
+    ci_label = f"{round(100 * confidence_level)}% CI (HR)"
+    lines = [
+        "## Cox proportional hazards",
+        "",
+        f"| covariate | coef | HR | {ci_label} | p |",
+        "| --- | ---: | ---: | :---: | ---: |",
+    ]
+    for i, name in enumerate(result.feature_names):
+        lo = result.hazard_ratio_ci_lower[i]
+        hi = result.hazard_ratio_ci_upper[i]
+        lines.append(
+            f"| {name} | {result.coefficients[i]:.3f} | {result.hazard_ratios[i]:.3f} "
+            f"| [{lo:.3f}, {hi:.3f}] | {format_p_value(result.p_values[i])} |"
+        )
+    lines.extend(
+        [
+            "",
+            f"- Log partial likelihood: {result.log_partial_likelihood:.3f}",
+            (
+                f"- Likelihood-ratio chi-square({len(result.coefficients)}): "
+                f"{result.likelihood_ratio_statistic:.2f}"
+            ),
+            f"- Likelihood-ratio p-value: {format_p_value(result.likelihood_ratio_p_value)}",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def render_report(
     title,
     cohorts,
     log_rank=None,
     log_rank_labels=None,
     concordance=None,
+    cox=None,
     generated_on=None,
 ):
     """Assemble the full markdown evaluation report."""
@@ -132,6 +163,9 @@ def render_report(
         parts.append("")
     if log_rank is not None:
         parts.append(render_log_rank_section(log_rank, log_rank_labels or []))
+        parts.append("")
+    if cox is not None:
+        parts.append(render_cox_section(cox))
         parts.append("")
     if concordance is not None:
         parts.append(render_concordance_section(concordance))

@@ -19,12 +19,16 @@ NumPy and SciPy.
 - **Restricted mean survival time** (`rmst`) integrating a Kaplan-Meier curve
   up to a truncation time ``tau``, with Greenwood standard errors and a
   two-group RMST difference test
+- **Competing-risks cumulative incidence** (`competing_risks`) via the
+  Aalen-Johansen / cause-specific CIF, Aalen (Coviello-Boggess) pointwise
+  variances, and Gray's k-sample test of subdistribution equality
 - **Synthetic data generator** (`synth`) drawing seeded Weibull/exponential
   latents in two arms, with independent exponential censoring calibrated to a
-  target censored fraction, plus a Weibull PH covariate generator and CSV
-  input/output helpers
+  target censored fraction, plus a Weibull PH covariate generator, an
+  independent-exponential competing-risks generator, and CSV input/output
+  helpers
 - **Markdown reports** (`report`) and a small CLI (`cli`) wiring the pipeline
-  together: `generate -> fit -> compare -> rmst -> cox -> report`
+  together: `generate -> fit -> compare -> rmst -> cox -> cif -> report`
 
 ## Installation
 
@@ -49,8 +53,20 @@ per-group Kaplan-Meier curves, test the difference, and write a report:
     python -m survival_kit.cli report --data sample.csv --group-col group \
         --tau 8 --title "Two-arm demo" --out report.md
 
-If your table uses other column names, point `fit`/`compare`/`cox`/`report` at
-them with `--time-col` and `--event-col`. Numeric covariates go to `cox` and
+Competing events use integer codes in the `event` column (`0` = censored,
+`1`, `2`, ... = causes). `--cause-rates` switches `generate` to independent
+exponential causes; `cif` estimates Aalen-Johansen curves and, with two or
+more groups, Gray's test. Reports include a cumulative-incidence section
+whenever more than one cause is present:
+
+    python -m survival_kit.cli generate --n 500 --cause-rates 0.45 0.30 \
+        --cause-rate-ratios 0.4 1.0 --censor-fraction 0.2 --seed 42 --out cr.csv
+    python -m survival_kit.cli cif --data cr.csv --group-col group --out cif.csv
+    python -m survival_kit.cli report --data cr.csv --group-col group \
+        --title "Competing-risks demo" --out cr_report.md
+
+If your table uses other column names, point `fit`/`compare`/`cox`/`cif`/`report`
+at them with `--time-col` and `--event-col`. Numeric covariates go to `cox` and
 `report` via `--covariate-cols`. A numeric risk-score column can be added to
 reports with `--score-col`; scores must be oriented so larger values predict
 earlier events.
@@ -60,9 +76,12 @@ earlier events.
 ```python
 from survival_kit import (
     fit_cox_ph,
+    fit_cumulative_incidence,
     fit_kaplan_meier,
+    generate_competing_risks_data,
     generate_ph_data,
     generate_survival_data,
+    gray_test_groups,
     log_rank_test_groups,
     restricted_mean_survival_time,
     rmst_difference_test,
@@ -89,6 +108,13 @@ print(diff.difference, diff.p_value)
 ph = generate_ph_data(800, coefficients=[0.7, -0.4], shape=1.3, scale=4.0, seed=7)
 cox = fit_cox_ph(ph.durations, ph.events, ph.covariates, feature_names=("x0", "x1"))
 print(cox.coefficients, cox.hazard_ratios)
+
+cr = generate_competing_risks_data(
+    800, cause_rates=(0.45, 0.30), group_rate_ratios=(0.4, 1.0), seed=7
+)
+cif = fit_cumulative_incidence(cr.durations, cr.event_types, cause=1)
+print(cif.at([1.0, 2.0]), cr.true_cif(1.0, cause=1))
+print(gray_test_groups(cr.durations, cr.event_types, cr.groups, cause=1).p_value)
 ```
 
 See `examples/run_demo.py` for a complete end-to-end run that writes
@@ -113,6 +139,15 @@ See `examples/run_demo.py` for a complete end-to-end run that writes
   the sum of the arm-specific variances. ``tau`` must not exceed the last
   follow-up time (the earlier last follow-up, when two groups are compared);
   omitting it selects that identifiable maximum.
+- Competing-risks CIF is the Aalen-Johansen estimator
+  ``F_k(t) = sum_{t_j <= t} S(t_j-) d_{jk} / n_j``, where ``S`` is overall
+  survival treating any event as a failure. This is the proper cause-specific
+  cumulative incidence; ``1 - KM`` that censors other causes overestimates
+  ``F_k``. Pointwise variances use the Aalen / Coviello-Boggess formula, which
+  reduces to Greenwood's variance of ``1 - S(t)`` when only one cause is
+  present. Gray's test is the Fine-Gray score test of group indicators at the
+  null (IPCW weights keep competing events in the subdistribution risk set)
+  and reduces to the log-rank test when there is a single cause.
 
 ## Testing
 

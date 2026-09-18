@@ -174,6 +174,58 @@ def render_cox_section(result, confidence_level=0.95):
     return "\n".join(lines)
 
 
+def render_cif_section(summaries, gray_tests=None, gray_labels=None, confidence_level=0.95):
+    """Per-cohort cumulative incidence tables and optional Gray tests."""
+    ci_label = f"{round(100 * confidence_level)}% CI"
+    lines = ["## Cumulative incidence", ""]
+    curves = [curve for summary in summaries for curve in summary[1]]
+    pooled = [curve.time for curve in curves if curve.time.size]
+    if pooled:
+        combined = np.concatenate(pooled)
+        horizons = [0.0] + [float(np.quantile(combined, q)) for q in (0.25, 0.5, 0.75, 0.9)]
+    else:
+        horizons = [0.0]
+    for name, cohort_curves in summaries:
+        for curve in cohort_curves:
+            lines.extend(
+                [
+                    f"### {name}, cause {curve.cause}",
+                    "",
+                    f"| time | CIF | {ci_label} | std. error |",
+                    "| ---: | ---: | :---: | ---: |",
+                ]
+            )
+            for t in horizons:
+                incidence = curve.at(t)
+                lo = step_value(curve.time, curve.ci_lower, t, outside=0.0)
+                hi = step_value(curve.time, curve.ci_upper, t, outside=0.0)
+                se = step_value(curve.time, curve.std_err, t, outside=0.0)
+                lines.append(
+                    f"| {t:.3f} | {incidence:.3f} | [{lo:.3f}, {hi:.3f}] | {se:.3f} |"
+                )
+            lines.extend(["", f"- Events of this cause: {curve.n_events}", ""])
+    if gray_tests:
+        labels = gray_labels or []
+        for result in gray_tests:
+            pairs = ", ".join(
+                f"{label} {observed:.1f}/{expected:.1f}"
+                for label, observed, expected in zip(
+                    labels, result.observed, result.expected
+                )
+            )
+            lines.extend(
+                [
+                    f"### Gray's test (cause {result.cause})",
+                    "",
+                    f"- Chi-square({result.degrees_of_freedom}): {result.statistic:.2f}",
+                    f"- p-value: {format_p_value(result.p_value)}",
+                    f"- Observed vs expected events: {pairs}",
+                    "",
+                ]
+            )
+    return "\n".join(lines).rstrip()
+
+
 def render_report(
     title,
     cohorts,
@@ -184,6 +236,9 @@ def render_report(
     rmst=None,
     rmst_difference=None,
     rmst_labels=None,
+    cif_summaries=None,
+    gray_tests=None,
+    gray_labels=None,
     generated_on=None,
 ):
     """Assemble the full markdown evaluation report."""
@@ -212,5 +267,12 @@ def render_report(
         parts.append("")
     if concordance is not None:
         parts.append(render_concordance_section(concordance))
+        parts.append("")
+    if cif_summaries:
+        parts.append(
+            render_cif_section(
+                cif_summaries, gray_tests=gray_tests, gray_labels=gray_labels
+            )
+        )
         parts.append("")
     return "\n".join(parts).rstrip() + "\n"

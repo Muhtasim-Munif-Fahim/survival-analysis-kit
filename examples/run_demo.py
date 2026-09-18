@@ -18,7 +18,11 @@ if str(SRC) not in sys.path:
 
 from survival_kit.cli import main  # noqa: E402
 from survival_kit.concordance import concordance_index  # noqa: E402
-from survival_kit.synth import generate_survival_data, save_csv  # noqa: E402
+from survival_kit.synth import (  # noqa: E402
+    generate_competing_risks_data,
+    generate_survival_data,
+    save_csv,
+)
 
 
 def build_demo_dataset(output_dir):
@@ -63,6 +67,33 @@ def run_demo():
 
     result = concordance_index(data.durations, data.events, scores)
     print(f"c-index of the arm-membership score: {result.c_index:.3f}")
+
+    cr = generate_competing_risks_data(
+        n=500,
+        cause_rates=(0.45, 0.30),
+        group_rate_ratios=(0.4, 1.0),
+        censor_fraction=0.2,
+        seed=2026,
+    )
+    cr_csv = output_dir / "demo_cr.csv"
+    save_csv(cr, cr_csv)
+    main(
+        [
+            "cif",
+            "--data", str(cr_csv),
+            "--group-col", "group",
+            "--out", str(output_dir / "demo_cif.csv"),
+        ]
+    )
+    main(
+        [
+            "report",
+            "--data", str(cr_csv),
+            "--group-col", "group",
+            "--title", "survival-analysis-kit competing-risks demo",
+            "--out", str(output_dir / "demo_cr_report.md"),
+        ]
+    )
     print(f"artifacts written to {output_dir}")
 
 

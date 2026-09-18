@@ -48,6 +48,7 @@ def run_demo():
 
     main(["fit", *shared, "--group-col", "group", "--out", str(output_dir / "demo_curves.csv")])
     main(["compare", *shared, "--group-col", "group"])
+    main(["rmst", *shared, "--group-col", "group", "--out", str(output_dir / "demo_rmst.csv")])
     main(["cox", *shared, "--group-col", "group", "--out", str(output_dir / "demo_cox.csv")])
     main(
         [

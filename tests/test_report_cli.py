@@ -228,3 +228,70 @@ def test_render_report_optional_cox_section():
     assert "## Cox proportional hazards" in text
     assert "treated" in text
     assert "Log partial likelihood:" in text
+
+
+def test_rmst_command_reports_two_group_difference(tmp_path, capsys):
+    data_path = tmp_path / "arms.csv"
+    out_path = tmp_path / "rmst.csv"
+    main(
+        [
+            "generate",
+            "--n", "400",
+            "--shape", "1.0",
+            "--scale", "2.0",
+            "--group-scale-ratio", "3.0",
+            "--seed", "7",
+            "--out", str(data_path),
+        ]
+    )
+    assert (
+        main(
+            [
+                "rmst",
+                "--data", str(data_path),
+                "--group-col", "group",
+                "--tau", "3",
+                "--out", str(out_path),
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "tau = 3" in out
+    assert "control: RMST=" in out
+    assert "treatment: RMST=" in out
+    assert "difference (control - treatment)" in out
+    assert "p-value" in out
+    with open(out_path, newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    names = {row["cohort"] for row in rows}
+    assert {"control", "treatment", "control-treatment"} <= names
+    control = next(row for row in rows if row["cohort"] == "control")
+    treatment = next(row for row in rows if row["cohort"] == "treatment")
+    assert float(treatment["rmst"]) > float(control["rmst"])
+
+
+def test_rmst_command_rejects_tau_past_follow_up(tmp_path):
+    data_path = tmp_path / "tiny.csv"
+    main(["generate", "--n", "40", "--seed", "3", "--out", str(data_path)])
+    with pytest.raises(SystemExit, match="last follow-up"):
+        main(["rmst", "--data", str(data_path), "--group-col", "group", "--tau", "1e9"])
+
+
+def test_report_command_includes_rmst_section(tmp_path):
+    data_path = tmp_path / "data.csv"
+    report_path = tmp_path / "report.md"
+    main(["generate", "--n", "150", "--seed", "4", "--out", str(data_path)])
+    main(
+        [
+            "report",
+            "--data", str(data_path),
+            "--group-col", "group",
+            "--tau", "2.5",
+            "--out", str(report_path),
+        ]
+    )
+    text = report_path.read_text(encoding="utf-8")
+    assert "## Restricted mean survival time" in text
+    assert "Truncation time (tau): 2.500" in text
+    assert "Difference (control - treatment):" in text

@@ -8,6 +8,11 @@ from datetime import date
 
 import numpy as np
 
+from .competing_risks import (
+    fit_all_cumulative_incidence,
+    fit_cumulative_incidence,
+    gray_test_groups,
+)
 from .concordance import concordance_index
 from .cox import fit_cox_ph
 from .kaplan_meier import fit_kaplan_meier
@@ -18,7 +23,8 @@ from .rmst import (
     restricted_mean_survival_time,
     rmst_difference_test,
 )
-from .synth import generate_survival_data, load_csv, save_csv
+from .synth import generate_competing_risks_data, generate_survival_data, load_csv, save_csv
+from .utils import observed_causes
 
 
 def build_parser():
@@ -36,6 +42,20 @@ def build_parser():
     gen.add_argument("--group-scale-ratio", type=float, default=1.8)
     gen.add_argument("--arm-fraction", type=float, default=0.5)
     gen.add_argument("--seed", type=int, default=42)
+    gen.add_argument(
+        "--cause-rates",
+        nargs="+",
+        type=float,
+        default=None,
+        help="exponential rates per competing cause; switches generate to competing risks",
+    )
+    gen.add_argument(
+        "--cause-rate-ratios",
+        nargs="+",
+        type=float,
+        default=None,
+        help="treatment/control rate ratios per cause (default: 1 for every cause)",
+    )
     gen.add_argument("--out", required=True)
 
     fit = sub.add_parser("fit", help="fit Kaplan-Meier curves to a CSV")
@@ -85,6 +105,19 @@ def build_parser():
     )
     rmst.add_argument("--out", default=None, help="optional CSV of RMST estimates")
 
+    cif = sub.add_parser("cif", help="Aalen-Johansen cumulative incidence for competing events")
+    cif.add_argument("--data", required=True)
+    cif.add_argument("--time-col", default="duration")
+    cif.add_argument("--event-col", default="event")
+    cif.add_argument("--group-col", default=None)
+    cif.add_argument(
+        "--cause",
+        type=int,
+        default=None,
+        help="cause code to estimate (default: every observed cause)",
+    )
+    cif.add_argument("--out", default=None, help="optional CSV of CIF estimates")
+
     cox = sub.add_parser("cox", help="fit a Cox proportional hazards model")
     cox.add_argument("--data", required=True)
     cox.add_argument("--time-col", default="duration")
@@ -95,8 +128,13 @@ def build_parser():
     return parser
 
 
-def _load(args):
-    return load_csv(args.data, time_col=args.time_col, event_col=args.event_col)
+def _load(args, with_event_types=False):
+    return load_csv(
+        args.data,
+        time_col=args.time_col,
+        event_col=args.event_col,
+        with_event_types=with_event_types,
+    )
 
 
 def _cohort_labels(args, groups):
@@ -190,15 +228,27 @@ def _rmst_difference(durations, events, groups, labels, tau):
 
 
 def run_generate(args):
-    data = generate_survival_data(
-        args.n,
-        shape=args.shape,
-        scale=args.scale,
-        censor_fraction=args.censor_fraction,
-        group_scale_ratio=args.group_scale_ratio,
-        arm_fraction=args.arm_fraction,
-        seed=args.seed,
-    )
+    if args.cause_rate_ratios is not None and args.cause_rates is None:
+        raise SystemExit("--cause-rate-ratios requires --cause-rates")
+    if args.cause_rates is not None:
+        data = generate_competing_risks_data(
+            args.n,
+            cause_rates=args.cause_rates,
+            censor_fraction=args.censor_fraction,
+            group_rate_ratios=args.cause_rate_ratios if args.cause_rate_ratios else 1.0,
+            arm_fraction=args.arm_fraction,
+            seed=args.seed,
+        )
+    else:
+        data = generate_survival_data(
+            args.n,
+            shape=args.shape,
+            scale=args.scale,
+            censor_fraction=args.censor_fraction,
+            group_scale_ratio=args.group_scale_ratio,
+            arm_fraction=args.arm_fraction,
+            seed=args.seed,
+        )
     save_csv(data, args.out)
     print(f"wrote {args.n} observations to {args.out}")
 
@@ -253,7 +303,7 @@ def run_compare(args):
 
 
 def run_report(args):
-    durations, events, groups, extras = _load(args)
+    durations, events, groups, extras, event_types = _load(args, with_event_types=True)
     labels = _cohort_labels(args, groups)
     cohorts = _cohorts(durations, events, groups, labels)
 
@@ -283,6 +333,22 @@ def run_report(args):
     rmst_fits = _rmst_fits(durations, events, groups, labels, tau)
     rmst_diff = _rmst_difference(durations, events, groups, labels, tau)
 
+    cif_summaries = None
+    gray_tests = None
+    causes = observed_causes(event_types)
+    if len(causes) >= 2:
+        cif_summaries = []
+        for label in labels:
+            mask = _cohort_mask(groups, label)
+            cif_summaries.append(
+                (label, fit_all_cumulative_incidence(durations[mask], event_types[mask]))
+            )
+        if len(labels) >= 2:
+            gray_tests = [
+                gray_test_groups(durations, event_types, groups, cause=cause)
+                for cause in causes
+            ]
+
     text = render_report(
         title=args.title,
         cohorts=cohorts,
@@ -293,6 +359,9 @@ def run_report(args):
         rmst=rmst_fits,
         rmst_difference=rmst_diff,
         rmst_labels=labels,
+        cif_summaries=cif_summaries,
+        gray_tests=gray_tests,
+        gray_labels=labels if gray_tests else None,
         generated_on=date.today(),
     )
     with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
@@ -305,6 +374,8 @@ def run_report(args):
             f"Cox PH log partial likelihood: {cox_fit.log_partial_likelihood:.3f} "
             f"(LR p={cox_fit.likelihood_ratio_p_value:.3g})"
         )
+    if cif_summaries:
+        print(f"competing causes: {', '.join(str(cause) for cause in causes)}")
 
 
 def run_cox(args):
@@ -391,12 +462,79 @@ def run_rmst(args):
         print(f"wrote RMST estimates to {args.out}")
 
 
+def _print_cif_row(name, curve):
+    if curve.time.size == 0:
+        print(f"{name}, cause {curve.cause}: events=0, CIF=0")
+        return
+    print(
+        f"{name}, cause {curve.cause}: events={curve.n_events}, "
+        f"CIF={curve.incidence[-1]:.3f} (SE={curve.std_err[-1]:.3f})"
+    )
+
+
+def run_cif(args):
+    durations, _events, groups, _, event_types = _load(args, with_event_types=True)
+    labels = _cohort_labels(args, groups)
+    causes = observed_causes(event_types)
+    if args.cause is not None:
+        if args.cause < 1:
+            raise SystemExit("cause must be a positive integer")
+        causes = (args.cause,)
+    if not causes:
+        raise SystemExit("no competing events found in the event column")
+
+    fits = []
+    for label in labels:
+        mask = _cohort_mask(groups, label)
+        for cause in causes:
+            try:
+                curve = fit_cumulative_incidence(
+                    durations[mask], event_types[mask], cause=cause
+                )
+            except ValueError as exc:
+                raise SystemExit(str(exc)) from exc
+            fits.append((label, curve))
+            _print_cif_row(label, curve)
+
+    if len(labels) >= 2:
+        for cause in causes:
+            try:
+                result = gray_test_groups(durations, event_types, groups, cause=cause)
+            except ValueError as exc:
+                raise SystemExit(str(exc)) from exc
+            print(
+                f"Gray cause {cause}: chi-square({result.degrees_of_freedom}) = "
+                f"{result.statistic:.3f}"
+            )
+            print(f"Gray cause {cause}: p-value = {result.p_value:.3g}")
+
+    if args.out:
+        with open(args.out, "w", newline="", encoding="utf-8") as handle:
+            header = "time,cause,incidence,std_err,ci_lower,ci_upper"
+            if args.group_col:
+                handle.write(header + ",cohort\n")
+            else:
+                handle.write(header + "\n")
+            for label, curve in fits:
+                for i in range(curve.time.size):
+                    row = (
+                        f"{curve.time[i]:.6f},{curve.cause},"
+                        f"{curve.incidence[i]:.6f},{curve.std_err[i]:.6f},"
+                        f"{curve.ci_lower[i]:.6f},{curve.ci_upper[i]:.6f}"
+                    )
+                    if args.group_col:
+                        row += f",{label}"
+                    handle.write(row + "\n")
+        print(f"wrote cumulative incidence curves to {args.out}")
+
+
 COMMANDS = {
     "generate": run_generate,
     "fit": run_fit,
     "compare": run_compare,
     "report": run_report,
     "rmst": run_rmst,
+    "cif": run_cif,
     "cox": run_cox,
 }
 

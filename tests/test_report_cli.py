@@ -295,3 +295,156 @@ def test_report_command_includes_rmst_section(tmp_path):
     assert "## Restricted mean survival time" in text
     assert "Truncation time (tau): 2.500" in text
     assert "Difference (control - treatment):" in text
+
+
+def test_cif_command_writes_curves_and_gray_test(tmp_path, capsys):
+    data_path = tmp_path / "cr.csv"
+    out_path = tmp_path / "cif.csv"
+    main(
+        [
+            "generate",
+            "--n", "500",
+            "--cause-rates", "0.5", "0.25",
+            "--cause-rate-ratios", "0.3", "1.0",
+            "--censor-fraction", "0.2",
+            "--seed", "7",
+            "--out", str(data_path),
+        ]
+    )
+    with open(data_path, newline="", encoding="utf-8") as handle:
+        rows = list(csv.reader(handle))
+    assert rows[0] == ["duration", "event", "group"]
+    causes = {int(row[1]) for row in rows[1:]}
+    assert {1, 2} <= causes
+
+    assert (
+        main(
+            [
+                "cif",
+                "--data", str(data_path),
+                "--group-col", "group",
+                "--out", str(out_path),
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "cause 1" in out
+    assert "cause 2" in out
+    assert "Gray cause 1" in out
+    assert "p-value" in out
+    with open(out_path, newline="", encoding="utf-8") as handle:
+        fitted = list(csv.DictReader(handle))
+    assert {"control", "treatment"} <= {row["cohort"] for row in fitted}
+    assert {"1", "2"} <= {row["cause"] for row in fitted}
+    for row in fitted:
+        incidence = float(row["incidence"])
+        assert 0.0 <= incidence <= 1.0
+
+
+def test_cif_command_can_restrict_to_one_cause(tmp_path, capsys):
+    data_path = tmp_path / "cr.csv"
+    out_path = tmp_path / "cif.csv"
+    main(
+        [
+            "generate",
+            "--n", "120",
+            "--cause-rates", "0.4", "0.3",
+            "--seed", "3",
+            "--out", str(data_path),
+        ]
+    )
+    main(
+        [
+            "cif",
+            "--data", str(data_path),
+            "--cause", "2",
+            "--out", str(out_path),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert "cause 2" in out
+    assert "cause 1:" not in out
+    with open(out_path, newline="", encoding="utf-8") as handle:
+        fitted = list(csv.DictReader(handle))
+    assert fitted
+    assert {row["cause"] for row in fitted} == {"2"}
+
+
+def test_report_command_includes_cif_and_gray_for_competing_risks(tmp_path):
+    data_path = tmp_path / "cr.csv"
+    report_path = tmp_path / "cr.md"
+    main(
+        [
+            "generate",
+            "--n", "250",
+            "--cause-rates", "0.45", "0.3",
+            "--cause-rate-ratios", "0.4", "1.0",
+            "--seed", "4",
+            "--out", str(data_path),
+        ]
+    )
+    main(
+        [
+            "report",
+            "--data", str(data_path),
+            "--group-col", "group",
+            "--title", "Competing risks demo",
+            "--out", str(report_path),
+        ]
+    )
+    text = report_path.read_text(encoding="utf-8")
+    assert "## Cumulative incidence" in text
+    assert "### control, cause 1" in text
+    assert "### treatment, cause 2" in text
+    assert "### Gray's test (cause 1)" in text
+    assert "Observed vs expected events:" in text
+
+
+def test_report_omits_cif_section_for_single_cause_data(tmp_path):
+    data_path = tmp_path / "data.csv"
+    report_path = tmp_path / "report.md"
+    main(["generate", "--n", "80", "--seed", "4", "--out", str(data_path)])
+    main(
+        ["report", "--data", str(data_path), "--group-col", "group", "--out", str(report_path)]
+    )
+    text = report_path.read_text(encoding="utf-8")
+    assert "## Cumulative incidence" not in text
+
+
+def test_render_report_optional_cif_section():
+    from survival_kit.competing_risks import fit_all_cumulative_incidence, gray_test_groups
+    from survival_kit.synth import generate_competing_risks_data
+
+    data = generate_competing_risks_data(180, cause_rates=(0.4, 0.3), seed=11)
+    cohorts = [_summary(data, "control"), _summary(data, "treatment")]
+    cif_summaries = [
+        (
+            "control",
+            fit_all_cumulative_incidence(
+                data.durations[data.groups == "control"],
+                data.event_types[data.groups == "control"],
+            ),
+        ),
+        (
+            "treatment",
+            fit_all_cumulative_incidence(
+                data.durations[data.groups == "treatment"],
+                data.event_types[data.groups == "treatment"],
+            ),
+        ),
+    ]
+    gray = [
+        gray_test_groups(data.durations, data.event_types, data.groups, cause=1),
+        gray_test_groups(data.durations, data.event_types, data.groups, cause=2),
+    ]
+    text = render_report(
+        "CR",
+        cohorts,
+        cif_summaries=cif_summaries,
+        gray_tests=gray,
+        gray_labels=["control", "treatment"],
+    )
+    assert "## Cumulative incidence" in text
+    assert "Gray's test (cause 1)" in text
+    assert "control, cause 1" in text

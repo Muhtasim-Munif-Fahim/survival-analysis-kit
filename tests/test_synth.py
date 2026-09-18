@@ -3,7 +3,14 @@
 import numpy as np
 import pytest
 
-from survival_kit.synth import generate_ph_data, generate_survival_data, load_csv, save_csv
+from survival_kit.synth import (
+    exponential_competing_cif,
+    generate_competing_risks_data,
+    generate_ph_data,
+    generate_survival_data,
+    load_csv,
+    save_csv,
+)
 
 
 def test_same_seed_reproduces_the_sample():
@@ -136,3 +143,80 @@ def test_invalid_parameters_raise():
         generate_survival_data(10, censor_fraction=1.5)
     with pytest.raises(ValueError):
         generate_survival_data(10, arm_fraction=0.0)
+
+
+def test_competing_risks_reproduces_with_the_same_seed():
+    first = generate_competing_risks_data(80, seed=5)
+    second = generate_competing_risks_data(80, seed=5)
+    other = generate_competing_risks_data(80, seed=6)
+    assert np.array_equal(first.durations, second.durations)
+    assert np.array_equal(first.event_types, second.event_types)
+    assert not np.array_equal(first.durations, other.durations)
+
+
+def test_competing_risks_shapes_and_cause_codes():
+    data = generate_competing_risks_data(200, cause_rates=(0.4, 0.3, 0.2), seed=1)
+    assert data.durations.shape == (200,)
+    assert data.event_types.dtype == int
+    assert set(np.unique(data.event_types)) <= {0, 1, 2, 3}
+    assert {1, 2, 3} <= set(np.unique(data.event_types))
+    assert bool(np.all(data.events))
+    assert data.censor_fraction == 0.0
+    assert set(np.unique(data.groups)) == {"control", "treatment"}
+
+
+def test_competing_risks_censor_calibration_hits_the_requested_share():
+    data = generate_competing_risks_data(
+        6000, cause_rates=(0.4, 0.3), censor_fraction=0.3, seed=5
+    )
+    realized = float(np.mean(data.event_types == 0))
+    assert 0.26 < realized < 0.34
+
+
+def test_competing_risks_rate_ratio_shifts_cause1_incidence():
+    data = generate_competing_risks_data(
+        8000,
+        cause_rates=(0.5, 0.3),
+        group_rate_ratios=(0.2, 1.0),
+        seed=6,
+    )
+    control = data.true_cif(2.0, cause=1, group="control")
+    treated = data.true_cif(2.0, cause=1, group="treatment")
+    assert control > treated
+    control_share = float(np.mean(data.event_types[data.groups == "control"] == 1))
+    treated_share = float(np.mean(data.event_types[data.groups == "treatment"] == 1))
+    assert control_share > treated_share
+
+
+def test_exponential_competing_cif_closed_form():
+    value = exponential_competing_cif(1.0, (0.4, 0.2), cause=1)
+    expected = 0.4 / 0.6 * (1.0 - np.exp(-0.6))
+    assert value == pytest.approx(expected)
+    vector = exponential_competing_cif([0.0, 1.0], (0.4, 0.2), cause=2)
+    assert vector[0] == pytest.approx(0.0)
+    assert vector[1] == pytest.approx(0.2 / 0.6 * (1.0 - np.exp(-0.6)))
+
+
+def test_competing_risks_csv_round_trip_preserves_cause_codes(tmp_path):
+    data = generate_competing_risks_data(60, censor_fraction=0.2, seed=9)
+    path = tmp_path / "cr.csv"
+    save_csv(data, path)
+    durations, events, groups, extras, event_types = load_csv(str(path), with_event_types=True)
+    assert np.allclose(durations, data.durations)
+    assert np.array_equal(event_types, data.event_types)
+    assert np.array_equal(events, data.events)
+    assert np.array_equal(groups.astype(str), data.groups.astype(str))
+    assert extras == {}
+
+
+def test_competing_risks_invalid_parameters_raise():
+    with pytest.raises(ValueError):
+        generate_competing_risks_data(0)
+    with pytest.raises(ValueError):
+        generate_competing_risks_data(10, cause_rates=(0.4,))
+    with pytest.raises(ValueError):
+        generate_competing_risks_data(10, cause_rates=(0.4, -0.1))
+    with pytest.raises(ValueError):
+        generate_competing_risks_data(10, group_rate_ratios=(1.0, 2.0, 3.0))
+    with pytest.raises(ValueError):
+        generate_competing_risks_data(10, censor_fraction=1.0)

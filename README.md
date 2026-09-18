@@ -16,12 +16,15 @@ NumPy and SciPy.
 - **Cox proportional hazards** (`cox`) maximizing the Breslow partial
   likelihood for right-censored data with covariates, returning coefficients,
   hazard ratios, Wald intervals, and a Breslow baseline cumulative hazard
+- **Restricted mean survival time** (`rmst`) integrating a Kaplan-Meier curve
+  up to a truncation time ``tau``, with Greenwood standard errors and a
+  two-group RMST difference test
 - **Synthetic data generator** (`synth`) drawing seeded Weibull/exponential
   latents in two arms, with independent exponential censoring calibrated to a
   target censored fraction, plus a Weibull PH covariate generator and CSV
   input/output helpers
 - **Markdown reports** (`report`) and a small CLI (`cli`) wiring the pipeline
-  together: `generate -> fit -> compare -> cox -> report`
+  together: `generate -> fit -> compare -> rmst -> cox -> report`
 
 ## Installation
 
@@ -41,9 +44,10 @@ per-group Kaplan-Meier curves, test the difference, and write a report:
     python -m survival_kit.cli fit --data sample.csv --group-col group \
         --out curves.csv
     python -m survival_kit.cli compare --data sample.csv --group-col group
+    python -m survival_kit.cli rmst --data sample.csv --group-col group --tau 8
     python -m survival_kit.cli cox --data sample.csv --group-col group --out cox.csv
     python -m survival_kit.cli report --data sample.csv --group-col group \
-        --title "Two-arm demo" --out report.md
+        --tau 8 --title "Two-arm demo" --out report.md
 
 If your table uses other column names, point `fit`/`compare`/`cox`/`report` at
 them with `--time-col` and `--event-col`. Numeric covariates go to `cox` and
@@ -60,14 +64,27 @@ from survival_kit import (
     generate_ph_data,
     generate_survival_data,
     log_rank_test_groups,
+    restricted_mean_survival_time,
+    rmst_difference_test,
 )
 
 data = generate_survival_data(500, shape=1.0, scale=3.0, group_scale_ratio=2.0, seed=7)
-curve = fit_kaplan_meier(data.durations[data.groups == "control"], data.events[data.groups == "control"])
-print(curve.median(), curve.at([1.0, 2.0, 4.0]))
+control = data.groups == "control"
+treated = data.groups == "treatment"
+curve = fit_kaplan_meier(data.durations[control], data.events[control])
+print(curve.median(), curve.at([1.0, 2.0, 4.0]), curve.restricted_mean(4.0))
 
 test = log_rank_test_groups(data.durations, data.events, data.groups)
 print(test.statistic, test.p_value)
+
+rmst = restricted_mean_survival_time(data.durations[control], data.events[control], tau=4.0)
+print(rmst.rmst, rmst.std_err)
+diff = rmst_difference_test(
+    data.durations[treated], data.events[treated],
+    data.durations[control], data.events[control],
+    tau=4.0,
+)
+print(diff.difference, diff.p_value)
 
 ph = generate_ph_data(800, coefficients=[0.7, -0.4], shape=1.3, scale=4.0, seed=7)
 cox = fit_cox_ph(ph.durations, ph.events, ph.covariates, feature_names=("x0", "x1"))
@@ -90,6 +107,12 @@ See `examples/run_demo.py` for a complete end-to-end run that writes
   intercept (absorbed into the baseline hazard), and reports ``exp(beta)`` as
   the per-unit hazard ratio. Group labels passed to the CLI are dummy-coded
   with the first level as the reference.
+- RMST is the area under the Kaplan-Meier curve on ``[0, tau]``. The
+  Greenwood plug-in variance is the sum of squared remaining areas after each
+  event time, weighted by ``d_i / (n_i (n_i - d_i))``. The two-group test uses
+  the sum of the arm-specific variances. ``tau`` must not exceed the last
+  follow-up time (the earlier last follow-up, when two groups are compared);
+  omitting it selects that identifiable maximum.
 
 ## Testing
 

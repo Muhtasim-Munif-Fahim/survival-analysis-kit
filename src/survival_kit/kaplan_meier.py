@@ -29,6 +29,23 @@ class SurvivalCurve:
         below = np.nonzero(self.survival <= 0.5)[0]
         return float(self.time[below[0]]) if below.size else None
 
+    def restricted_mean(self, tau):
+        """Area under the Kaplan-Meier curve from 0 to ``tau``.
+
+        The step function is right-continuous and holds the last estimated
+        survival when ``tau`` lies beyond the last event time.
+        """
+        tau = float(tau)
+        if not np.isfinite(tau) or tau < 0.0:
+            raise ValueError("tau must be a finite non-negative number")
+        if tau == 0.0 or self.time.size == 0:
+            return tau
+        knots = self.time[self.time <= tau]
+        levels = self.survival[self.time <= tau]
+        breaks = np.concatenate(([0.0], knots, [tau]))
+        heights = np.concatenate(([1.0], levels))
+        return float(np.dot(np.diff(breaks), heights))
+
 
 def fit_kaplan_meier(durations, events, confidence_level=0.95, ci_method="log-log"):
     """Estimate the survival function with Greenwood-based confidence bands.

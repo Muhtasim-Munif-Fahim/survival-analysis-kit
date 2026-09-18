@@ -111,6 +111,39 @@ def render_concordance_section(result):
     )
 
 
+def render_rmst_section(results, labels, difference=None, confidence_level=0.95):
+    """Per-cohort RMST table and, when present, the two-group difference."""
+    ci_label = f"{round(100 * confidence_level)}% CI"
+    tau = results[0].tau
+    lines = [
+        "## Restricted mean survival time",
+        "",
+        f"- Truncation time (tau): {tau:.3f}",
+        "",
+        f"| cohort | RMST | {ci_label} | std. error | RMTL |",
+        "| --- | ---: | :---: | ---: | ---: |",
+    ]
+    for label, result in zip(labels, results):
+        lines.append(
+            f"| {label} | {result.rmst:.3f} | [{result.ci_lower:.3f}, {result.ci_upper:.3f}] "
+            f"| {result.std_err:.3f} | {result.rmtl:.3f} |"
+        )
+    if difference is not None and len(labels) >= 2:
+        lines.extend(
+            [
+                "",
+                (
+                    f"- Difference ({labels[0]} - {labels[1]}): "
+                    f"{difference.difference:.3f}"
+                ),
+                f"- Difference std. error: {difference.std_err:.3f}",
+                f"- z: {difference.z_score:.2f}",
+                f"- p-value: {format_p_value(difference.p_value)}",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def render_cox_section(result, confidence_level=0.95):
     """Coefficient table and partial-likelihood summary for a Cox PH fit."""
     ci_label = f"{round(100 * confidence_level)}% CI (HR)"
@@ -148,6 +181,9 @@ def render_report(
     log_rank_labels=None,
     concordance=None,
     cox=None,
+    rmst=None,
+    rmst_difference=None,
+    rmst_labels=None,
     generated_on=None,
 ):
     """Assemble the full markdown evaluation report."""
@@ -163,6 +199,13 @@ def render_report(
         parts.append("")
     if log_rank is not None:
         parts.append(render_log_rank_section(log_rank, log_rank_labels or []))
+        parts.append("")
+    if rmst:
+        parts.append(
+            render_rmst_section(
+                rmst, rmst_labels or [c.name for c in cohorts], difference=rmst_difference
+            )
+        )
         parts.append("")
     if cox is not None:
         parts.append(render_cox_section(cox))

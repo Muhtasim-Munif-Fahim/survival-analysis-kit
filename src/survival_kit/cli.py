@@ -13,6 +13,11 @@ from .cox import fit_cox_ph
 from .kaplan_meier import fit_kaplan_meier
 from .logrank import log_rank_test, log_rank_test_groups
 from .report import CohortSummary, render_report
+from .rmst import (
+    default_truncation_time,
+    restricted_mean_survival_time,
+    rmst_difference_test,
+)
 from .synth import generate_survival_data, load_csv, save_csv
 
 
@@ -59,7 +64,26 @@ def build_parser():
         help="numeric columns to include in an optional Cox PH section",
     )
     report.add_argument("--title", default="Survival Analysis Report")
+    report.add_argument(
+        "--tau",
+        type=float,
+        default=None,
+        help="truncation time for the RMST section (default: min last follow-up)",
+    )
     report.add_argument("--out", required=True)
+
+    rmst = sub.add_parser("rmst", help="restricted mean survival time up to tau")
+    rmst.add_argument("--data", required=True)
+    rmst.add_argument("--time-col", default="duration")
+    rmst.add_argument("--event-col", default="event")
+    rmst.add_argument("--group-col", default=None)
+    rmst.add_argument(
+        "--tau",
+        type=float,
+        default=None,
+        help="truncation time (default: min last follow-up across cohorts)",
+    )
+    rmst.add_argument("--out", default=None, help="optional CSV of RMST estimates")
 
     cox = sub.add_parser("cox", help="fit a Cox proportional hazards model")
     cox.add_argument("--data", required=True)
@@ -115,6 +139,54 @@ def _cohorts(durations, events, groups, labels):
             )
         )
     return summaries
+
+
+def _cohort_mask(groups, label):
+    return groups == label if label != "all" else np.ones(groups.size, bool)
+
+
+def _shared_tau(durations, groups, labels, tau):
+    slices = [durations[_cohort_mask(groups, label)] for label in labels]
+    identifiable = default_truncation_time(*slices)
+    if tau is None:
+        return identifiable
+    tau = float(tau)
+    if not np.isfinite(tau) or tau <= 0.0:
+        raise SystemExit("tau must be a finite positive number")
+    if tau > identifiable:
+        raise SystemExit(
+            f"tau must not exceed the last follow-up time ({identifiable})"
+        )
+    return tau
+
+
+def _rmst_fits(durations, events, groups, labels, tau):
+    fits = []
+    for label in labels:
+        mask = _cohort_mask(groups, label)
+        try:
+            fits.append(
+                restricted_mean_survival_time(durations[mask], events[mask], tau=tau)
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    return fits
+
+
+def _rmst_difference(durations, events, groups, labels, tau):
+    if len(labels) != 2:
+        return None
+    first, second = (_cohort_mask(groups, label) for label in labels)
+    try:
+        return rmst_difference_test(
+            durations[first],
+            events[first],
+            durations[second],
+            events[second],
+            tau=tau,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def run_generate(args):
@@ -207,6 +279,10 @@ def run_report(args):
     if design is not None:
         cox_fit = fit_cox_ph(durations, events, design, feature_names=names)
 
+    tau = _shared_tau(durations, groups, labels, args.tau)
+    rmst_fits = _rmst_fits(durations, events, groups, labels, tau)
+    rmst_diff = _rmst_difference(durations, events, groups, labels, tau)
+
     text = render_report(
         title=args.title,
         cohorts=cohorts,
@@ -214,6 +290,9 @@ def run_report(args):
         log_rank_labels=labels if len(labels) >= 2 else None,
         concordance=discrimination,
         cox=cox_fit,
+        rmst=rmst_fits,
+        rmst_difference=rmst_diff,
+        rmst_labels=labels,
         generated_on=date.today(),
     )
     with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
@@ -267,11 +346,57 @@ def run_cox(args):
     print(f"wrote Cox PH estimates to {args.out}")
 
 
+def _print_rmst_row(name, result):
+    print(
+        f"{name}: RMST={result.rmst:.3f} (SE={result.std_err:.3f}) "
+        f"[{result.ci_lower:.3f}, {result.ci_upper:.3f}]  RMTL={result.rmtl:.3f}"
+    )
+
+
+def run_rmst(args):
+    durations, events, groups, _ = _load(args)
+    labels = _cohort_labels(args, groups)
+    tau = _shared_tau(durations, groups, labels, args.tau)
+    fits = _rmst_fits(durations, events, groups, labels, tau)
+    difference = _rmst_difference(durations, events, groups, labels, tau)
+
+    print(f"tau = {tau:.6g}")
+    for label, result in zip(labels, fits):
+        _print_rmst_row(label, result)
+    if difference is not None:
+        print(
+            f"difference ({labels[0]} - {labels[1]}) = {difference.difference:.3f} "
+            f"(SE={difference.std_err:.3f})"
+        )
+        print(f"z = {difference.z_score:.3f}")
+        print(f"p-value = {difference.p_value:.3g}")
+
+    if args.out:
+        with open(args.out, "w", newline="", encoding="utf-8") as handle:
+            handle.write(
+                "cohort,tau,rmst,rmtl,std_err,ci_lower,ci_upper,n_observations,n_events\n"
+            )
+            for label, result in zip(labels, fits):
+                handle.write(
+                    f"{label},{result.tau:.10g},{result.rmst:.10g},{result.rmtl:.10g},"
+                    f"{result.std_err:.10g},{result.ci_lower:.10g},{result.ci_upper:.10g},"
+                    f"{result.n_observations},{result.n_events}\n"
+                )
+            if difference is not None:
+                handle.write(
+                    f"{labels[0]}-{labels[1]},{difference.tau:.10g},"
+                    f"{difference.difference:.10g},,{difference.std_err:.10g},"
+                    f"{difference.ci_lower:.10g},{difference.ci_upper:.10g},,\n"
+                )
+        print(f"wrote RMST estimates to {args.out}")
+
+
 COMMANDS = {
     "generate": run_generate,
     "fit": run_fit,
     "compare": run_compare,
     "report": run_report,
+    "rmst": run_rmst,
     "cox": run_cox,
 }
 

@@ -1,4 +1,4 @@
-"""Command-line interface wiring generate -> fit -> compare -> report."""
+"""Command-line interface wiring generate -> fit -> compare -> cox -> aft -> report."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from datetime import date
 
 import numpy as np
 
+from .aft import fit_weibull_aft
 from .competing_risks import (
     fit_all_cumulative_incidence,
     fit_cumulative_incidence,
@@ -125,6 +126,14 @@ def build_parser():
     cox.add_argument("--group-col", default=None)
     cox.add_argument("--covariate-cols", nargs="+", default=None)
     cox.add_argument("--out", required=True)
+
+    aft = sub.add_parser("aft", help="fit a Weibull accelerated failure time model")
+    aft.add_argument("--data", required=True)
+    aft.add_argument("--time-col", default="duration")
+    aft.add_argument("--event-col", default="event")
+    aft.add_argument("--group-col", default=None)
+    aft.add_argument("--covariate-cols", nargs="+", default=None)
+    aft.add_argument("--out", required=True)
     return parser
 
 
@@ -323,11 +332,15 @@ def run_report(args):
         discrimination = concordance_index(durations, events, scores)
 
     cox_fit = None
+    aft_fit = None
     design, names = _design_matrix(
         groups, extras, group_col=args.group_col, covariate_cols=args.covariate_cols
     )
     if design is not None:
         cox_fit = fit_cox_ph(durations, events, design, feature_names=names)
+        aft_fit = fit_weibull_aft(durations, events, design, feature_names=names)
+    else:
+        aft_fit = fit_weibull_aft(durations, events)
 
     tau = _shared_tau(durations, groups, labels, args.tau)
     rmst_fits = _rmst_fits(durations, events, groups, labels, tau)
@@ -356,6 +369,7 @@ def run_report(args):
         log_rank_labels=labels if len(labels) >= 2 else None,
         concordance=discrimination,
         cox=cox_fit,
+        aft=aft_fit,
         rmst=rmst_fits,
         rmst_difference=rmst_diff,
         rmst_labels=labels,
@@ -373,6 +387,11 @@ def run_report(args):
         print(
             f"Cox PH log partial likelihood: {cox_fit.log_partial_likelihood:.3f} "
             f"(LR p={cox_fit.likelihood_ratio_p_value:.3g})"
+        )
+    if aft_fit is not None:
+        print(
+            f"Weibull AFT log-likelihood: {aft_fit.log_likelihood:.3f} "
+            f"(shape={aft_fit.shape:.3f}, LR p={aft_fit.likelihood_ratio_p_value:.3g})"
         )
     if cif_summaries:
         print(f"competing causes: {', '.join(str(cause) for cause in causes)}")
@@ -415,6 +434,69 @@ def run_cox(args):
                 f"{result.hazard_ratio_ci_upper[i]:.10g}\n"
             )
     print(f"wrote Cox PH estimates to {args.out}")
+
+
+def run_aft(args):
+    durations, events, groups, extras = _load(args)
+    design, names = _design_matrix(
+        groups, extras, group_col=args.group_col, covariate_cols=args.covariate_cols
+    )
+    try:
+        result = fit_weibull_aft(
+            durations, events, design, feature_names=names if design is not None else None
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    print(f"n={result.n_observations}, events={result.n_events}, iterations={result.n_iterations}")
+    print(f"log-likelihood = {result.log_likelihood:.6f}")
+    print(
+        f"likelihood-ratio chi-square({len(result.coefficients)}) = "
+        f"{result.likelihood_ratio_statistic:.3f} (p={result.likelihood_ratio_p_value:.3g})"
+    )
+    print(f"shape = {result.shape:.4f} (sigma = {result.sigma:.4f})")
+    print(
+        f"(Intercept): coef={result.intercept:.4f} se={result.std_err_intercept:.4f} "
+        f"scale={result.scale:.4f} "
+        f"[{np.exp(result.ci_lower_intercept):.4f}, {np.exp(result.ci_upper_intercept):.4f}] "
+        f"p={result.intercept_p_value:.3g}"
+    )
+    for i, name in enumerate(result.feature_names):
+        print(
+            f"{name}: coef={result.coefficients[i]:.4f} se={result.std_err[i]:.4f} "
+            f"TR={result.acceleration_factors[i]:.4f} "
+            f"[{result.acceleration_factor_ci_lower[i]:.4f}, "
+            f"{result.acceleration_factor_ci_upper[i]:.4f}] "
+            f"p={result.p_values[i]:.3g}"
+        )
+    print(
+        f"log(sigma): coef={result.log_sigma:.4f} se={result.std_err_log_sigma:.4f} "
+        f"p={result.log_sigma_p_value:.3g}"
+    )
+
+    with open(args.out, "w", newline="", encoding="utf-8") as handle:
+        handle.write(
+            "parameter,estimate,std_err,z,p_value,time_ratio,tr_ci_lower,tr_ci_upper\n"
+        )
+        handle.write(
+            f"(Intercept),{result.intercept:.10g},{result.std_err_intercept:.10g},"
+            f"{result.intercept_z:.10g},{result.intercept_p_value:.10g},"
+            f"{result.scale:.10g},{np.exp(result.ci_lower_intercept):.10g},"
+            f"{np.exp(result.ci_upper_intercept):.10g}\n"
+        )
+        for i, name in enumerate(result.feature_names):
+            handle.write(
+                f"{name},{result.coefficients[i]:.10g},{result.std_err[i]:.10g},"
+                f"{result.z_scores[i]:.10g},{result.p_values[i]:.10g},"
+                f"{result.acceleration_factors[i]:.10g},"
+                f"{result.acceleration_factor_ci_lower[i]:.10g},"
+                f"{result.acceleration_factor_ci_upper[i]:.10g}\n"
+            )
+        handle.write(
+            f"log(sigma),{result.log_sigma:.10g},{result.std_err_log_sigma:.10g},"
+            f"{result.log_sigma_z:.10g},{result.log_sigma_p_value:.10g},,,\n"
+        )
+    print(f"wrote Weibull AFT estimates to {args.out}")
 
 
 def _print_rmst_row(name, result):
@@ -536,6 +618,7 @@ COMMANDS = {
     "rmst": run_rmst,
     "cif": run_cif,
     "cox": run_cox,
+    "aft": run_aft,
 }
 
 

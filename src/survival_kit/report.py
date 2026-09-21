@@ -174,6 +174,49 @@ def render_cox_section(result, confidence_level=0.95):
     return "\n".join(lines)
 
 
+def render_aft_section(result, confidence_level=0.95):
+    """Coefficient table and likelihood summary for a Weibull AFT fit."""
+    ci_label = f"{round(100 * confidence_level)}% CI (TR)"
+    lines = [
+        "## Weibull accelerated failure time",
+        "",
+        f"| parameter | coef | time ratio | {ci_label} | p |",
+        "| --- | ---: | :---: | :---: | ---: |",
+        (
+            f"| (Intercept) | {result.intercept:.3f} | {result.scale:.3f} "
+            f"| [{np.exp(result.ci_lower_intercept):.3f}, "
+            f"{np.exp(result.ci_upper_intercept):.3f}] "
+            f"| {format_p_value(result.intercept_p_value)} |"
+        ),
+    ]
+    for i, name in enumerate(result.feature_names):
+        lo = result.acceleration_factor_ci_lower[i]
+        hi = result.acceleration_factor_ci_upper[i]
+        lines.append(
+            f"| {name} | {result.coefficients[i]:.3f} | {result.acceleration_factors[i]:.3f} "
+            f"| [{lo:.3f}, {hi:.3f}] | {format_p_value(result.p_values[i])} |"
+        )
+    lines.extend(
+        [
+            (
+                f"| log(sigma) | {result.log_sigma:.3f} | — | "
+                f"[{result.ci_lower_log_sigma:.3f}, {result.ci_upper_log_sigma:.3f}] "
+                f"| {format_p_value(result.log_sigma_p_value)} |"
+            ),
+            "",
+            f"- Shape (1/sigma): {result.shape:.3f}",
+            f"- Scale at x=0 (exp(intercept)): {result.scale:.3f}",
+            f"- Log-likelihood: {result.log_likelihood:.3f}",
+            (
+                f"- Likelihood-ratio chi-square({len(result.coefficients)}): "
+                f"{result.likelihood_ratio_statistic:.2f}"
+            ),
+            f"- Likelihood-ratio p-value: {format_p_value(result.likelihood_ratio_p_value)}",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def render_cif_section(summaries, gray_tests=None, gray_labels=None, confidence_level=0.95):
     """Per-cohort cumulative incidence tables and optional Gray tests."""
     ci_label = f"{round(100 * confidence_level)}% CI"
@@ -233,6 +276,7 @@ def render_report(
     log_rank_labels=None,
     concordance=None,
     cox=None,
+    aft=None,
     rmst=None,
     rmst_difference=None,
     rmst_labels=None,
@@ -264,6 +308,9 @@ def render_report(
         parts.append("")
     if cox is not None:
         parts.append(render_cox_section(cox))
+        parts.append("")
+    if aft is not None:
+        parts.append(render_aft_section(aft))
         parts.append("")
     if concordance is not None:
         parts.append(render_concordance_section(concordance))

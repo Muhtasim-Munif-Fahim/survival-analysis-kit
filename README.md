@@ -19,6 +19,11 @@ NumPy and SciPy.
 - **Restricted mean survival time** (`rmst`) integrating a Kaplan-Meier curve
   up to a truncation time ``tau``, with Greenwood standard errors and a
   two-group RMST difference test
+- **Weibull accelerated failure time** (`aft`) maximizing the right-censored
+  extreme-value likelihood. Kaplan-Meier and log-rank already ship in this
+  kit, so the parametric addition is a Weibull AFT fit (time ratios,
+  shape/scale, Wald intervals, and a likelihood-ratio test) rather than a
+  second nonparametric curve
 - **Competing-risks cumulative incidence** (`competing_risks`) via the
   Aalen-Johansen / cause-specific CIF, Aalen (Coviello-Boggess) pointwise
   variances, and Gray's k-sample test of subdistribution equality
@@ -28,7 +33,7 @@ NumPy and SciPy.
   independent-exponential competing-risks generator, and CSV input/output
   helpers
 - **Markdown reports** (`report`) and a small CLI (`cli`) wiring the pipeline
-  together: `generate -> fit -> compare -> rmst -> cox -> cif -> report`
+  together: `generate -> fit -> compare -> rmst -> cox -> aft -> cif -> report`
 
 ## Installation
 
@@ -50,6 +55,7 @@ per-group Kaplan-Meier curves, test the difference, and write a report:
     python -m survival_kit.cli compare --data sample.csv --group-col group
     python -m survival_kit.cli rmst --data sample.csv --group-col group --tau 8
     python -m survival_kit.cli cox --data sample.csv --group-col group --out cox.csv
+    python -m survival_kit.cli aft --data sample.csv --group-col group --out aft.csv
     python -m survival_kit.cli report --data sample.csv --group-col group \
         --tau 8 --title "Two-arm demo" --out report.md
 
@@ -65,9 +71,9 @@ whenever more than one cause is present:
     python -m survival_kit.cli report --data cr.csv --group-col group \
         --title "Competing-risks demo" --out cr_report.md
 
-If your table uses other column names, point `fit`/`compare`/`cox`/`cif`/`report`
-at them with `--time-col` and `--event-col`. Numeric covariates go to `cox` and
-`report` via `--covariate-cols`. A numeric risk-score column can be added to
+If your table uses other column names, point `fit`/`compare`/`cox`/`aft`/`cif`/`report`
+at them with `--time-col` and `--event-col`. Numeric covariates go to `cox`, `aft`,
+and `report` via `--covariate-cols`. A numeric risk-score column can be added to
 reports with `--score-col`; scores must be oriented so larger values predict
 earlier events.
 
@@ -78,6 +84,7 @@ from survival_kit import (
     fit_cox_ph,
     fit_cumulative_incidence,
     fit_kaplan_meier,
+    fit_weibull_aft,
     generate_competing_risks_data,
     generate_ph_data,
     generate_survival_data,
@@ -109,6 +116,10 @@ ph = generate_ph_data(800, coefficients=[0.7, -0.4], shape=1.3, scale=4.0, seed=
 cox = fit_cox_ph(ph.durations, ph.events, ph.covariates, feature_names=("x0", "x1"))
 print(cox.coefficients, cox.hazard_ratios)
 
+aft = fit_weibull_aft(ph.durations, ph.events, ph.covariates, feature_names=("x0", "x1"))
+print(aft.coefficients, aft.acceleration_factors, aft.shape)
+print(aft.survival_at([1.0, 2.0, 4.0], np.zeros(2)), aft.median(np.zeros(2)))
+
 cr = generate_competing_risks_data(
     800, cause_rates=(0.45, 0.30), group_rate_ratios=(0.4, 1.0), seed=7
 )
@@ -133,6 +144,15 @@ See `examples/run_demo.py` for a complete end-to-end run that writes
   intercept (absorbed into the baseline hazard), and reports ``exp(beta)`` as
   the per-unit hazard ratio. Group labels passed to the CLI are dummy-coded
   with the first level as the reference.
+- Weibull AFT uses the log-linear model
+  ``log T = mu + x @ beta + sigma * W`` with a Gumbel (minimum) residual
+  ``W``. The Weibull shape is ``1 / sigma`` and the scale at covariate row
+  ``x`` is ``exp(mu + x @ beta)``. Time ratios are ``exp(beta)``; because
+  Weibull is also a PH family, the equivalent log hazard ratios are
+  ``-beta / sigma``. Kaplan-Meier already supplies ``S(t)`` (and Greenwood
+  intervals) and log-rank already supplies a two-/k-sample nonparametric
+  test, so this module adds the parametric AFT companion rather than a
+  second KM/log-rank implementation.
 - RMST is the area under the Kaplan-Meier curve on ``[0, tau]``. The
   Greenwood plug-in variance is the sum of squared remaining areas after each
   event time, weighted by ``d_i / (n_i (n_i - d_i))``. The two-group test uses

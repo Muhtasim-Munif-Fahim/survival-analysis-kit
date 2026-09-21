@@ -1,5 +1,6 @@
 """survival_kit: a lightweight survival analysis toolkit for right-censored data."""
 
+from .aft import WeibullAFTResult, fit_weibull_aft
 from .competing_risks import (
     CumulativeIncidence,
     GrayTestResult,
@@ -50,6 +51,7 @@ __all__ = [
     "RMSTResult",
     "SurvivalCurve",
     "SurvivalData",
+    "WeibullAFTResult",
     "concordance_index",
     "default_truncation_time",
     "exponential_competing_cif",
@@ -58,6 +60,7 @@ __all__ = [
     "fit_cumulative_incidence",
     "fit_kaplan_meier",
     "fit_nelson_aalen",
+    "fit_weibull_aft",
     "format_p_value",
     "generate_competing_risks_data",
     "generate_ph_data",

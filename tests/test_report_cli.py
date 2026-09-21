@@ -230,6 +230,86 @@ def test_render_report_optional_cox_section():
     assert "Log partial likelihood:" in text
 
 
+def test_aft_command_recovers_treatment_time_ratio(tmp_path, capsys):
+    data_path = tmp_path / "arms.csv"
+    out_path = tmp_path / "aft.csv"
+    main(
+        [
+            "generate",
+            "--n", "800",
+            "--shape", "1.2",
+            "--group-scale-ratio", "2.0",
+            "--seed", "5",
+            "--out", str(data_path),
+        ]
+    )
+    assert main(["aft", "--data", str(data_path), "--group-col", "group", "--out", str(out_path)]) == 0
+    out = capsys.readouterr().out
+    assert "group[treatment]" in out
+    assert "TR=" in out
+    assert "log-likelihood" in out
+    assert "shape =" in out
+    with open(out_path, newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    names = {row["parameter"] for row in rows}
+    assert {"(Intercept)", "group[treatment]", "log(sigma)"} <= names
+    treated = next(row for row in rows if row["parameter"] == "group[treatment]")
+    tr = float(treated["time_ratio"])
+    assert tr == pytest.approx(2.0, rel=0.25)
+
+
+def test_aft_command_fits_intercept_only(tmp_path, capsys):
+    data_path = tmp_path / "one.csv"
+    out_path = tmp_path / "aft.csv"
+    main(["generate", "--n", "120", "--seed", "3", "--out", str(data_path)])
+    assert main(["aft", "--data", str(data_path), "--out", str(out_path)]) == 0
+    out = capsys.readouterr().out
+    assert "(Intercept)" in out
+    assert "log(sigma)" in out
+    with open(out_path, newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert [row["parameter"] for row in rows] == ["(Intercept)", "log(sigma)"]
+
+
+def test_report_includes_aft_section_for_grouped_data(tmp_path):
+    data_path = tmp_path / "data.csv"
+    report_path = tmp_path / "report.md"
+    main(["generate", "--n", "150", "--seed", "4", "--out", str(data_path)])
+    main(
+        ["report", "--data", str(data_path), "--group-col", "group", "--out", str(report_path)]
+    )
+    text = report_path.read_text(encoding="utf-8")
+    assert "## Weibull accelerated failure time" in text
+    assert "group[treatment]" in text
+    assert "Shape (1/sigma):" in text
+    assert "time ratio" in text
+
+
+def test_report_includes_intercept_only_aft_without_design(tmp_path):
+    data_path = tmp_path / "data.csv"
+    report_path = tmp_path / "report.md"
+    main(["generate", "--n", "80", "--seed", "4", "--out", str(data_path)])
+    main(["report", "--data", str(data_path), "--out", str(report_path)])
+    text = report_path.read_text(encoding="utf-8")
+    assert "## Weibull accelerated failure time" in text
+    assert "(Intercept)" in text
+    assert "## Cox proportional hazards" not in text
+
+
+def test_render_report_optional_aft_section():
+    from survival_kit.aft import fit_weibull_aft
+
+    data = generate_survival_data(120, group_scale_ratio=2.5, seed=11)
+    cohorts = [_summary(data, "control"), _summary(data, "treatment")]
+    treated = (data.groups == "treatment").astype(float)
+    aft = fit_weibull_aft(data.durations, data.events, treated, feature_names=("treated",))
+    text = render_report("Demo", cohorts, aft=aft)
+    assert "## Weibull accelerated failure time" in text
+    assert "treated" in text
+    assert "Log-likelihood:" in text
+    assert "Shape (1/sigma):" in text
+
+
 def test_rmst_command_reports_two_group_difference(tmp_path, capsys):
     data_path = tmp_path / "arms.csv"
     out_path = tmp_path / "rmst.csv"

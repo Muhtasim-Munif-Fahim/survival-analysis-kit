@@ -54,6 +54,7 @@ def run_demo():
     main(["compare", *shared, "--group-col", "group"])
     main(["rmst", *shared, "--group-col", "group", "--out", str(output_dir / "demo_rmst.csv")])
     main(["cox", *shared, "--group-col", "group", "--out", str(output_dir / "demo_cox.csv")])
+    main(["aft", *shared, "--group-col", "group", "--out", str(output_dir / "demo_aft.csv")])
     main(
         [
             "report",

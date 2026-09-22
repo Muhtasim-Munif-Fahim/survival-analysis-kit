@@ -88,6 +88,15 @@ def run_demo():
     )
     main(
         [
+            "finegray",
+            "--data", str(cr_csv),
+            "--group-col", "group",
+            "--cause", "1",
+            "--out", str(output_dir / "demo_finegray.csv"),
+        ]
+    )
+    main(
+        [
             "report",
             "--data", str(cr_csv),
             "--group-col", "group",

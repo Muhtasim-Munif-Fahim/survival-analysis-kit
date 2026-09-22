@@ -1,4 +1,8 @@
-"""Aalen-Johansen cumulative incidence for competing events."""
+"""Aalen-Johansen cumulative incidence for competing events.
+
+Gray's test is the null score test of the Fine-Gray subdistribution model
+in :mod:`survival_kit.fine_gray`, using the same IPCW risk-set weights.
+"""
 
 from __future__ import annotations
 

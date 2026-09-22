@@ -1,4 +1,4 @@
-"""Command-line interface wiring generate -> fit -> compare -> cox -> aft -> report."""
+"""Command-line interface wiring generate -> fit -> compare -> cox -> aft -> finegray -> report."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from .competing_risks import (
 )
 from .concordance import concordance_index
 from .cox import fit_cox_ph
+from .fine_gray import fit_fine_gray
 from .kaplan_meier import fit_kaplan_meier
 from .logrank import log_rank_test, log_rank_test_groups
 from .report import CohortSummary, render_report
@@ -134,6 +135,23 @@ def build_parser():
     aft.add_argument("--group-col", default=None)
     aft.add_argument("--covariate-cols", nargs="+", default=None)
     aft.add_argument("--out", required=True)
+
+    finegray = sub.add_parser(
+        "finegray",
+        help="fit a Fine-Gray subdistribution hazard model for one competing cause",
+    )
+    finegray.add_argument("--data", required=True)
+    finegray.add_argument("--time-col", default="duration")
+    finegray.add_argument("--event-col", default="event")
+    finegray.add_argument("--group-col", default=None)
+    finegray.add_argument("--covariate-cols", nargs="+", default=None)
+    finegray.add_argument(
+        "--cause",
+        type=int,
+        default=1,
+        help="cause code whose subdistribution hazard is modeled (default: 1)",
+    )
+    finegray.add_argument("--out", required=True)
     return parser
 
 
@@ -499,6 +517,58 @@ def run_aft(args):
     print(f"wrote Weibull AFT estimates to {args.out}")
 
 
+def run_finegray(args):
+    if not args.group_col and not args.covariate_cols:
+        raise SystemExit("finegray needs --group-col and/or --covariate-cols")
+    if args.cause < 1:
+        raise SystemExit("cause must be a positive integer")
+    durations, _events, groups, extras, event_types = _load(args, with_event_types=True)
+    design, names = _design_matrix(
+        groups, extras, group_col=args.group_col, covariate_cols=args.covariate_cols
+    )
+    if design is None:
+        raise SystemExit("finegray produced an empty design matrix")
+    try:
+        result = fit_fine_gray(
+            durations, event_types, design, cause=args.cause, feature_names=names
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    print(
+        f"cause {result.cause}: n={result.n_observations}, events={result.n_events}, "
+        f"iterations={result.n_iterations}"
+    )
+    print(f"log partial likelihood = {result.log_partial_likelihood:.6f}")
+    print(
+        f"likelihood-ratio chi-square({len(result.coefficients)}) = "
+        f"{result.likelihood_ratio_statistic:.3f} (p={result.likelihood_ratio_p_value:.3g})"
+    )
+    for i, name in enumerate(result.feature_names):
+        print(
+            f"{name}: coef={result.coefficients[i]:.4f} se={result.std_err[i]:.4f} "
+            f"SHR={result.subdistribution_hazard_ratios[i]:.4f} "
+            f"[{result.subdistribution_hazard_ratio_ci_lower[i]:.4f}, "
+            f"{result.subdistribution_hazard_ratio_ci_upper[i]:.4f}] "
+            f"p={result.p_values[i]:.3g}"
+        )
+
+    with open(args.out, "w", newline="", encoding="utf-8") as handle:
+        handle.write(
+            "covariate,coefficient,std_err,z,p_value,"
+            "subdistribution_hazard_ratio,shr_ci_lower,shr_ci_upper\n"
+        )
+        for i, name in enumerate(result.feature_names):
+            handle.write(
+                f"{name},{result.coefficients[i]:.10g},{result.std_err[i]:.10g},"
+                f"{result.z_scores[i]:.10g},{result.p_values[i]:.10g},"
+                f"{result.subdistribution_hazard_ratios[i]:.10g},"
+                f"{result.subdistribution_hazard_ratio_ci_lower[i]:.10g},"
+                f"{result.subdistribution_hazard_ratio_ci_upper[i]:.10g}\n"
+            )
+    print(f"wrote Fine-Gray estimates to {args.out}")
+
+
 def _print_rmst_row(name, result):
     print(
         f"{name}: RMST={result.rmst:.3f} (SE={result.std_err:.3f}) "
@@ -619,6 +689,7 @@ COMMANDS = {
     "cif": run_cif,
     "cox": run_cox,
     "aft": run_aft,
+    "finegray": run_finegray,
 }
 
 

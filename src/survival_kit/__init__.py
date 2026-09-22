@@ -11,6 +11,7 @@ from .competing_risks import (
 )
 from .concordance import ConcordanceResult, concordance_index
 from .cox import CoxPHResult, fit_cox_ph
+from .fine_gray import FineGrayResult, fit_fine_gray
 from .kaplan_meier import SurvivalCurve, fit_kaplan_meier
 from .logrank import LogRankResult, log_rank_test, log_rank_test_groups
 from .nelson_aalen import CumulativeHazard, fit_nelson_aalen
@@ -35,7 +36,7 @@ from .synth import (
 )
 from .utils import observed_causes
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 __all__ = [
     "CohortSummary",
@@ -44,6 +45,7 @@ __all__ = [
     "CoxPHResult",
     "CumulativeHazard",
     "CumulativeIncidence",
+    "FineGrayResult",
     "GrayTestResult",
     "LogRankResult",
     "PHSurvivalData",
@@ -58,6 +60,7 @@ __all__ = [
     "fit_all_cumulative_incidence",
     "fit_cox_ph",
     "fit_cumulative_incidence",
+    "fit_fine_gray",
     "fit_kaplan_meier",
     "fit_nelson_aalen",
     "fit_weibull_aft",

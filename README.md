@@ -27,13 +27,19 @@ NumPy and SciPy.
 - **Competing-risks cumulative incidence** (`competing_risks`) via the
   Aalen-Johansen / cause-specific CIF, Aalen (Coviello-Boggess) pointwise
   variances, and Gray's k-sample test of subdistribution equality
+- **Fine-Gray subdistribution hazard** (`fine_gray`) for one competing cause.
+  Nelson-Aalen cumulative hazard estimation, with optional Aalen or Greenwood
+  variance, is already provided by `nelson_aalen`, so this addition is the
+  proportional subdistribution model (IPCW weighted Breslow partial
+  likelihood, subdistribution hazard ratios, and a model CIF) rather than
+  another cumulative-hazard estimator
 - **Synthetic data generator** (`synth`) drawing seeded Weibull/exponential
   latents in two arms, with independent exponential censoring calibrated to a
   target censored fraction, plus a Weibull PH covariate generator, an
   independent-exponential competing-risks generator, and CSV input/output
   helpers
 - **Markdown reports** (`report`) and a small CLI (`cli`) wiring the pipeline
-  together: `generate -> fit -> compare -> rmst -> cox -> aft -> cif -> report`
+  together: `generate -> fit -> compare -> rmst -> cox -> aft -> cif -> finegray -> report`
 
 ## Installation
 
@@ -68,12 +74,14 @@ whenever more than one cause is present:
     python -m survival_kit.cli generate --n 500 --cause-rates 0.45 0.30 \
         --cause-rate-ratios 0.4 1.0 --censor-fraction 0.2 --seed 42 --out cr.csv
     python -m survival_kit.cli cif --data cr.csv --group-col group --out cif.csv
+    python -m survival_kit.cli finegray --data cr.csv --group-col group \
+        --cause 1 --out finegray.csv
     python -m survival_kit.cli report --data cr.csv --group-col group \
         --title "Competing-risks demo" --out cr_report.md
 
-If your table uses other column names, point `fit`/`compare`/`cox`/`aft`/`cif`/`report`
+If your table uses other column names, point `fit`/`compare`/`cox`/`aft`/`cif`/`finegray`/`report`
 at them with `--time-col` and `--event-col`. Numeric covariates go to `cox`, `aft`,
-and `report` via `--covariate-cols`. A numeric risk-score column can be added to
+`finegray`, and `report` via `--covariate-cols`. A numeric risk-score column can be added to
 reports with `--score-col`; scores must be oriented so larger values predict
 earlier events.
 
@@ -83,6 +91,7 @@ earlier events.
 from survival_kit import (
     fit_cox_ph,
     fit_cumulative_incidence,
+    fit_fine_gray,
     fit_kaplan_meier,
     fit_weibull_aft,
     generate_competing_risks_data,
@@ -126,6 +135,11 @@ cr = generate_competing_risks_data(
 cif = fit_cumulative_incidence(cr.durations, cr.event_types, cause=1)
 print(cif.at([1.0, 2.0]), cr.true_cif(1.0, cause=1))
 print(gray_test_groups(cr.durations, cr.event_types, cr.groups, cause=1).p_value)
+
+treatment = (cr.groups == "treatment").astype(float)
+fg = fit_fine_gray(cr.durations, cr.event_types, treatment, cause=1)
+print(fg.coefficients, fg.subdistribution_hazard_ratios)
+print(fg.cumulative_incidence_at([1.0, 2.0], [0.0]))
 ```
 
 See `examples/run_demo.py` for a complete end-to-end run that writes
@@ -168,6 +182,25 @@ See `examples/run_demo.py` for a complete end-to-end run that writes
   present. Gray's test is the Fine-Gray score test of group indicators at the
   null (IPCW weights keep competing events in the subdistribution risk set)
   and reduces to the log-rank test when there is a single cause.
+- Nelson-Aalen cumulative hazard estimation is already in the kit
+  (``fit_nelson_aalen``, with Aalen or Greenwood pointwise variance). The
+  competing-risks regression added alongside it is the Fine-Gray
+  proportional subdistribution hazard model, not a second cumulative-hazard
+  estimator. For cause ``k``,
+  ``lambda_k(t | x) = lambda_{k0}(t) exp(x @ beta)``, so the model CIF is
+  ``F_k(t | x) = 1 - exp(-Lambda_{k0}(t) exp(x @ beta))``. The partial likelihood
+  is the Breslow Cox likelihood on the subdistribution risk set. Subjects who
+  fail of another cause stay in that risk set with IPCW weight
+  ``G(t-) / G(T_i-)``, where ``G`` is the Kaplan-Meier estimator of the
+  censoring distribution (the same weights Gray's test uses). Tied cause-``k``
+  times use the Breslow denominator. ``exp(beta)`` is the per-unit
+  subdistribution hazard ratio. Wald intervals invert the weighted
+  partial-likelihood information and treat those censoring weights as fixed;
+  they do not add the extra term for estimating ``G``. With no competing
+  events the weights are one on the ordinary risk set and ``fit_fine_gray``
+  matches ``fit_cox_ph``. Gray's chi-square uses the hypergeometric covariance
+  of that score at the null, so it is close to the model score test but is
+  not the same finite-sample statistic as the Wald or likelihood-ratio test.
 
 ## Testing
 

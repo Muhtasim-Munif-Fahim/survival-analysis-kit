@@ -16,6 +16,8 @@ NumPy and SciPy.
 - **Cox proportional hazards** (`cox`) maximizing the Breslow partial
   likelihood for right-censored data with covariates, returning coefficients,
   hazard ratios, Wald intervals, and a Breslow baseline cumulative hazard
+- **Aalen additive hazards** (`aalen`) estimating time-varying
+  cumulative coefficients `B(t)` by least-squares increments
 - **Restricted mean survival time** (`rmst`) integrating a Kaplan-Meier curve
   up to a truncation time ``tau``, with Greenwood standard errors and a
   two-group RMST difference test
@@ -61,6 +63,7 @@ per-group Kaplan-Meier curves, test the difference, and write a report:
     python -m survival_kit.cli compare --data sample.csv --group-col group
     python -m survival_kit.cli rmst --data sample.csv --group-col group --tau 8
     python -m survival_kit.cli cox --data sample.csv --group-col group --out cox.csv
+    python -m survival_kit.cli aalen --data sample.csv --covariate-cols x0 x1 --out aalen.csv
     python -m survival_kit.cli aft --data sample.csv --group-col group --out aft.csv
     python -m survival_kit.cli report --data sample.csv --group-col group \
         --tau 8 --title "Two-arm demo" --out report.md
@@ -140,6 +143,15 @@ treatment = (cr.groups == "treatment").astype(float)
 fg = fit_fine_gray(cr.durations, cr.event_types, treatment, cause=1)
 print(fg.coefficients, fg.subdistribution_hazard_ratios)
 print(fg.cumulative_incidence_at([1.0, 2.0], [0.0]))
+
+```python
+from survival_kit import fit_aalen_additive
+
+aalen = fit_aalen_additive(ph.durations, ph.events, ph.covariates, feature_names=("x0", "x1"))
+print(aalen.time, aalen.cumulative_coefficients[-1])  # B(T) including intercept
+print(aalen.cumulative_hazard_at(aalen.time, ph.covariates[0]))
+```
+
 ```
 
 See `examples/run_demo.py` for a complete end-to-end run that writes

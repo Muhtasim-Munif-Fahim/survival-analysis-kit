@@ -1,4 +1,4 @@
-"""Command-line interface wiring generate -> fit -> compare -> cox -> aft -> finegray -> report."""
+"""Command-line interface wiring generate -> fit -> compare -> cox -> aft -> aalen -> finegray -> report."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from .competing_risks import (
     gray_test_groups,
 )
 from .concordance import concordance_index
+from .aalen import fit_aalen_additive
 from .cox import fit_cox_ph
 from .fine_gray import fit_fine_gray
 from .kaplan_meier import fit_kaplan_meier
@@ -127,6 +128,17 @@ def build_parser():
     cox.add_argument("--group-col", default=None)
     cox.add_argument("--covariate-cols", nargs="+", default=None)
     cox.add_argument("--out", required=True)
+
+    aalen = sub.add_parser(
+        "aalen",
+        help="fit Aalen's additive hazards model (cumulative coefficients)",
+    )
+    aalen.add_argument("--data", required=True)
+    aalen.add_argument("--time-col", default="duration")
+    aalen.add_argument("--event-col", default="event")
+    aalen.add_argument("--group-col", default=None)
+    aalen.add_argument("--covariate-cols", nargs="+", default=None)
+    aalen.add_argument("--out", required=True)
 
     aft = sub.add_parser("aft", help="fit a Weibull accelerated failure time model")
     aft.add_argument("--data", required=True)
@@ -454,6 +466,41 @@ def run_cox(args):
     print(f"wrote Cox PH estimates to {args.out}")
 
 
+def run_aalen(args):
+    if not args.group_col and not args.covariate_cols:
+        raise SystemExit("aalen needs --group-col and/or --covariate-cols")
+    durations, events, groups, extras = _load(args)
+    design, names = _design_matrix(
+        groups, extras, group_col=args.group_col, covariate_cols=args.covariate_cols
+    )
+    if design is None:
+        raise SystemExit("aalen produced an empty design matrix")
+    result = fit_aalen_additive(durations, events, design, feature_names=names)
+
+    print(f"n={result.n_observations}, events={result.n_events}, times={result.time.size}")
+    # Report the final cumulative coefficients (end of follow-up).
+    final = result.cumulative_coefficients[-1]
+    final_se = result.std_err[-1]
+    for i, name in enumerate(result.feature_names):
+        print(
+            f"{name}: B(T)={final[i]:.4f} se={final_se[i]:.4f} "
+            f"[{result.ci_lower[-1, i]:.4f}, {result.ci_upper[-1, i]:.4f}]"
+        )
+
+    with open(args.out, "w", newline="", encoding="utf-8") as handle:
+        header = ["time"] + [f"B_{name}" for name in result.feature_names] + [
+            f"se_{name}" for name in result.feature_names
+        ]
+        handle.write(",".join(header) + "\n")
+        for k, t in enumerate(result.time):
+            row = [f"{t:.10g}"]
+            row.extend(f"{result.cumulative_coefficients[k, j]:.10g}" for j in range(final.size))
+            row.extend(f"{result.std_err[k, j]:.10g}" for j in range(final.size))
+            handle.write(",".join(row) + "\n")
+    print(f"wrote Aalen cumulative coefficients to {args.out}")
+
+
+
 def run_aft(args):
     durations, events, groups, extras = _load(args)
     design, names = _design_matrix(
@@ -688,6 +735,7 @@ COMMANDS = {
     "rmst": run_rmst,
     "cif": run_cif,
     "cox": run_cox,
+    "aalen": run_aalen,
     "aft": run_aft,
     "finegray": run_finegray,
 }

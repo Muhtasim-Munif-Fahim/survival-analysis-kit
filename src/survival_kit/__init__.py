@@ -1,5 +1,6 @@
 """survival_kit: a lightweight survival analysis toolkit for right-censored data."""
 
+from .aalen import AalenAdditiveResult, fit_aalen_additive
 from .aft import WeibullAFTResult, fit_weibull_aft
 from .competing_risks import (
     CumulativeIncidence,
@@ -39,6 +40,7 @@ from .utils import observed_causes
 __version__ = "0.10.0"
 
 __all__ = [
+    "AalenAdditiveResult",
     "CohortSummary",
     "CompetingRisksData",
     "ConcordanceResult",
@@ -57,6 +59,7 @@ __all__ = [
     "concordance_index",
     "default_truncation_time",
     "exponential_competing_cif",
+    "fit_aalen_additive",
     "fit_all_cumulative_incidence",
     "fit_cox_ph",
     "fit_cumulative_incidence",

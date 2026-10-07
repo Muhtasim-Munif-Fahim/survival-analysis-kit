@@ -16,6 +16,11 @@ NumPy and SciPy.
 - **Cox proportional hazards** (`cox`) maximizing the Breslow partial
   likelihood for right-censored data with covariates, returning coefficients,
   hazard ratios, Wald intervals, and a Breslow baseline cumulative hazard
+- **Cox time-varying covariates** (`cox_tvc`) fitting the Andersen–Gill /
+  counting-process Cox model on start-stop intervals. Baseline-only Cox PH
+  already ships in `cox`, so this addition is the start-stop partial
+  likelihood (risk sets `start < t <= stop`), expansion helpers, and a
+  synthetic TVC generator rather than another fixed-covariate estimator
 - **Aalen additive hazards** (`aalen`) estimating time-varying
   cumulative coefficients `B(t)` by least-squares increments
 - **Restricted mean survival time** (`rmst`) integrating a Kaplan-Meier curve
@@ -41,7 +46,21 @@ NumPy and SciPy.
   independent-exponential competing-risks generator, and CSV input/output
   helpers
 - **Markdown reports** (`report`) and a small CLI (`cli`) wiring the pipeline
-  together: `generate -> fit -> compare -> rmst -> cox -> aft -> cif -> finegray -> report`
+  together: `generate -> fit -> compare -> rmst -> cox -> cox-tvc -> aft -> cif -> finegray -> report`
+
+
+### Cox with time-varying covariates
+
+Counting-process CSV columns `start`, `stop`, `event`, plus covariates:
+
+    python -m survival_kit.cli cox-tvc --data intervals.csv \
+        --covariate-cols treatment biomarker --out cox_tvc.csv
+
+From Python:
+
+    from survival_kit import fit_cox_tvc, generate_tvc_data
+    data = generate_tvc_data(500, beta=0.8, switch_time=2.0, seed=0)
+    fit = fit_cox_tvc(data.start, data.stop, data.events, data.covariates)
 
 ## Installation
 

@@ -12,6 +12,12 @@ from .competing_risks import (
 )
 from .concordance import ConcordanceResult, concordance_index
 from .cox import CoxPHResult, fit_cox_ph
+from .cox_tvc import (
+    TimeVaryingSurvivalData,
+    expand_to_counting_process,
+    fit_cox_tvc,
+    generate_tvc_data,
+)
 from .fine_gray import FineGrayResult, fit_fine_gray
 from .kaplan_meier import SurvivalCurve, fit_kaplan_meier
 from .logrank import LogRankResult, log_rank_test, log_rank_test_groups
@@ -37,7 +43,7 @@ from .synth import (
 )
 from .utils import observed_causes
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 __all__ = [
     "AalenAdditiveResult",
@@ -62,6 +68,10 @@ __all__ = [
     "fit_aalen_additive",
     "fit_all_cumulative_incidence",
     "fit_cox_ph",
+    "fit_cox_tvc",
+    "expand_to_counting_process",
+    "generate_tvc_data",
+    "TimeVaryingSurvivalData",
     "fit_cumulative_incidence",
     "fit_fine_gray",
     "fit_kaplan_meier",

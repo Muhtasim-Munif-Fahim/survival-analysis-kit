@@ -1,4 +1,4 @@
-"""Command-line interface wiring generate -> fit -> compare -> cox -> aft -> aalen -> finegray -> report."""
+"""Command-line interface wiring generate -> fit -> compare -> cox -> cox-tvc -> aft -> aalen -> finegray -> report."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from .competing_risks import (
 from .concordance import concordance_index
 from .aalen import fit_aalen_additive
 from .cox import fit_cox_ph
+from .cox_tvc import fit_cox_tvc
 from .fine_gray import fit_fine_gray
 from .kaplan_meier import fit_kaplan_meier
 from .logrank import log_rank_test, log_rank_test_groups
@@ -164,6 +165,17 @@ def build_parser():
         help="cause code whose subdistribution hazard is modeled (default: 1)",
     )
     finegray.add_argument("--out", required=True)
+
+    cox_tvc = sub.add_parser(
+        "cox-tvc",
+        help="fit Cox PH with time-varying covariates (counting-process / start-stop)",
+    )
+    cox_tvc.add_argument("--data", required=True, help="CSV with start, stop, event, covariates")
+    cox_tvc.add_argument("--start-col", default="start")
+    cox_tvc.add_argument("--stop-col", default="stop")
+    cox_tvc.add_argument("--event-col", default="event")
+    cox_tvc.add_argument("--covariate-cols", nargs="+", required=True)
+    cox_tvc.add_argument("--out", required=True)
     return parser
 
 
@@ -727,6 +739,59 @@ def run_cif(args):
         print(f"wrote cumulative incidence curves to {args.out}")
 
 
+
+def run_cox_tvc(args):
+    import csv
+
+    with open(args.data, newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames is None:
+            raise SystemExit("CSV has no header")
+        rows = list(reader)
+    if not rows:
+        raise SystemExit("CSV has no data rows")
+    for col in [args.start_col, args.stop_col, args.event_col, *args.covariate_cols]:
+        if col not in rows[0]:
+            raise SystemExit(f"missing column: {col}")
+    start = np.asarray([float(r[args.start_col]) for r in rows], dtype=float)
+    stop = np.asarray([float(r[args.stop_col]) for r in rows], dtype=float)
+    events = np.asarray([float(r[args.event_col]) for r in rows], dtype=float) > 0
+    design = np.column_stack(
+        [np.asarray([float(r[c]) for r in rows], dtype=float) for c in args.covariate_cols]
+    )
+    try:
+        result = fit_cox_tvc(start, stop, events, design, feature_names=tuple(args.covariate_cols))
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    print(f"n_intervals={result.n_observations}, events={result.n_events}, iterations={result.n_iterations}")
+    print(f"log partial likelihood = {result.log_partial_likelihood:.6f}")
+    print(
+        f"likelihood-ratio chi-square({len(result.coefficients)}) = "
+        f"{result.likelihood_ratio_statistic:.3f} (p={result.likelihood_ratio_p_value:.3g})"
+    )
+    for i, name in enumerate(result.feature_names):
+        print(
+            f"{name}: coef={result.coefficients[i]:.4f} se={result.std_err[i]:.4f} "
+            f"HR={result.hazard_ratios[i]:.4f} "
+            f"[{result.hazard_ratio_ci_lower[i]:.4f}, {result.hazard_ratio_ci_upper[i]:.4f}] "
+            f"p={result.p_values[i]:.3g}"
+        )
+
+    with open(args.out, "w", newline="", encoding="utf-8") as handle:
+        handle.write(
+            "covariate,coefficient,std_err,z,p_value,hazard_ratio,hr_ci_lower,hr_ci_upper\n"
+        )
+        for i, name in enumerate(result.feature_names):
+            handle.write(
+                f"{name},{result.coefficients[i]:.10g},{result.std_err[i]:.10g},"
+                f"{result.z_scores[i]:.10g},{result.p_values[i]:.10g},"
+                f"{result.hazard_ratios[i]:.10g},{result.hazard_ratio_ci_lower[i]:.10g},"
+                f"{result.hazard_ratio_ci_upper[i]:.10g}\n"
+            )
+    print(f"wrote Cox TVC estimates to {args.out}")
+
+
 COMMANDS = {
     "generate": run_generate,
     "fit": run_fit,
@@ -738,6 +803,7 @@ COMMANDS = {
     "aalen": run_aalen,
     "aft": run_aft,
     "finegray": run_finegray,
+    "cox-tvc": run_cox_tvc,
 }
 
 

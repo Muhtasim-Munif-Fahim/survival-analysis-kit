@@ -240,3 +240,20 @@ See `examples/run_demo.py` for a complete end-to-end run that writes
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+
+## Integrated Brier Score
+
+`brier_score` / `integrated_brier_score` implement the IPCW Brier score
+(Graf et al., 1999). Pass predicted survival probabilities of shape
+`(n_samples, n_times)`. `km_survival_matrix` builds the marginal KM baseline.
+
+```python
+from survival_kit import integrated_brier_score, km_survival_matrix
+import numpy as np
+
+times = np.linspace(0.5, 5.0, 10)
+surv = km_survival_matrix(durations, events, times)
+result = integrated_brier_score(durations, events, surv, times)
+print(result.ibs)
+```

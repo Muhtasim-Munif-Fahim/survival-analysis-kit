@@ -41,6 +41,15 @@ from .synth import (
     load_csv,
     save_csv,
 )
+
+from .brier import (
+    BrierScoreResult,
+    IntegratedBrierResult,
+    brier_score,
+    integrated_brier_score,
+    km_survival_matrix,
+)
+
 from .utils import observed_causes
 
 __version__ = "0.11.0"
@@ -91,5 +100,10 @@ __all__ = [
     "restricted_mean_survival_time",
     "rmst_difference_test",
     "save_csv",
+    "BrierScoreResult",
+    "IntegratedBrierResult",
+    "brier_score",
+    "integrated_brier_score",
+    "km_survival_matrix",
     "__version__",
 ]

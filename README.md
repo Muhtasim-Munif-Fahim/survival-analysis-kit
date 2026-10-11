@@ -16,6 +16,10 @@ NumPy and SciPy.
 - **Cox proportional hazards** (`cox`) maximizing the Breslow partial
   likelihood for right-censored data with covariates, returning coefficients,
   hazard ratios, Wald intervals, and a Breslow baseline cumulative hazard
+- **Cox residuals and PH test** (`cox_diagnostics`): Schoenfeld, scaled
+  Schoenfeld, martingale and deviance residuals for a fitted Cox model, plus
+  the Grambsch-Therneau test of proportional hazards (per covariate and
+  global; `km`, `rank`, `identity` or `log` time transforms)
 - **Cox time-varying covariates** (`cox_tvc`) fitting the Andersen–Gill /
   counting-process Cox model on start-stop intervals. Baseline-only Cox PH
   already ships in `cox`, so this addition is the start-stop partial
@@ -61,6 +65,28 @@ From Python:
     from survival_kit import fit_cox_tvc, generate_tvc_data
     data = generate_tvc_data(500, beta=0.8, switch_time=2.0, seed=0)
     fit = fit_cox_tvc(data.start, data.stop, data.events, data.covariates)
+
+### Checking proportional hazards
+
+    python -m survival_kit.cli cox-zph --data sample.csv --group-col group \
+        --transform km --out zph.csv
+
+From Python:
+
+    from survival_kit import fit_cox_ph, proportional_hazards_test, schoenfeld_residuals
+    fit = fit_cox_ph(durations, events, X)
+    zph = proportional_hazards_test(fit, durations, events, X, transform="km")
+    print(zph.summary_rows())          # (name, rho, chisq, p) + GLOBAL row
+    res = schoenfeld_residuals(fit, durations, events, X)
+    # plot res.times against res.scaled[:, j] to see beta_j(t)
+
+The statistic is the score-type approximation from Grambsch and Therneau
+(1994): the one R's `survival::cox.zph` used before version 3.0 and that
+`lifelines.statistics.proportional_hazard_test` uses today. Per-variable
+statistics match lifelines on tie-free data. The `km` transform is
+`1 - S(t-)` (left-continuous, as in R). Small p-values or a strong `rho`
+mean the effect drifts over time; consider stratifying or a time-varying
+term (`cox_tvc`).
 
 ## Installation
 

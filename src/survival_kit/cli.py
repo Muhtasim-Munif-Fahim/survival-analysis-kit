@@ -17,6 +17,7 @@ from .competing_risks import (
 from .concordance import concordance_index
 from .aalen import fit_aalen_additive
 from .cox import fit_cox_ph
+from .cox_diagnostics import proportional_hazards_test
 from .cox_tvc import fit_cox_tvc
 from .fine_gray import fit_fine_gray
 from .kaplan_meier import fit_kaplan_meier
@@ -129,6 +130,24 @@ def build_parser():
     cox.add_argument("--group-col", default=None)
     cox.add_argument("--covariate-cols", nargs="+", default=None)
     cox.add_argument("--out", required=True)
+
+    zph = sub.add_parser(
+        "cox-zph",
+        help="Grambsch-Therneau proportional-hazards test for a Cox fit",
+    )
+    zph.add_argument("--data", required=True)
+    zph.add_argument("--time-col", default="duration")
+    zph.add_argument("--event-col", default="event")
+    zph.add_argument("--group-col", default=None)
+    zph.add_argument("--covariate-cols", nargs="+", default=None)
+    zph.add_argument(
+        "--transform",
+        choices=("km", "rank", "identity", "log"),
+        default="km",
+        help="time transform g(t) (default: km, as in R's cox.zph)",
+    )
+    zph.add_argument("--alpha", type=float, default=0.05)
+    zph.add_argument("--out", default=None, help="optional CSV of test statistics")
 
     aalen = sub.add_parser(
         "aalen",
@@ -478,6 +497,43 @@ def run_cox(args):
     print(f"wrote Cox PH estimates to {args.out}")
 
 
+def run_cox_zph(args):
+    if not args.group_col and not args.covariate_cols:
+        raise SystemExit("cox-zph needs --group-col and/or --covariate-cols")
+    durations, events, groups, extras = _load(args)
+    design, names = _design_matrix(
+        groups, extras, group_col=args.group_col, covariate_cols=args.covariate_cols
+    )
+    if design is None:
+        raise SystemExit("cox-zph produced an empty design matrix")
+    fit = fit_cox_ph(durations, events, design, feature_names=names)
+    result = proportional_hazards_test(
+        fit, durations, events, design, transform=args.transform
+    )
+    print(
+        f"Grambsch-Therneau PH test (transform={result.transform}, "
+        f"events={result.n_events})"
+    )
+    flagged = set(result.violations(args.alpha))
+    for name, rho, stat, p in result.summary_rows()[:-1]:
+        note = "  <- violates PH" if name in flagged else ""
+        print(f"{name}: rho={rho:.4f} chisq={stat:.4f} p={p:.3g}{note}")
+    print(
+        f"GLOBAL: chisq({result.global_df})={result.global_statistic:.4f} "
+        f"p={result.global_p_value:.3g}"
+    )
+    if args.out:
+        with open(args.out, "w", newline="", encoding="utf-8") as handle:
+            handle.write("covariate,rho,chisq,df,p_value\n")
+            for name, rho, stat, p in result.summary_rows()[:-1]:
+                handle.write(f"{name},{rho:.10g},{stat:.10g},1,{p:.10g}\n")
+            handle.write(
+                f"GLOBAL,,{result.global_statistic:.10g},{result.global_df},"
+                f"{result.global_p_value:.10g}\n"
+            )
+        print(f"wrote PH test statistics to {args.out}")
+
+
 def run_aalen(args):
     if not args.group_col and not args.covariate_cols:
         raise SystemExit("aalen needs --group-col and/or --covariate-cols")
@@ -800,6 +856,7 @@ COMMANDS = {
     "rmst": run_rmst,
     "cif": run_cif,
     "cox": run_cox,
+    "cox-zph": run_cox_zph,
     "aalen": run_aalen,
     "aft": run_aft,
     "finegray": run_finegray,

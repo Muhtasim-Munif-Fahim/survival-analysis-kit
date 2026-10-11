@@ -12,6 +12,14 @@ from .competing_risks import (
 )
 from .concordance import ConcordanceResult, concordance_index
 from .cox import CoxPHResult, fit_cox_ph
+from .cox_diagnostics import (
+    ProportionalHazardsTest,
+    SchoenfeldResiduals,
+    deviance_residuals,
+    martingale_residuals,
+    proportional_hazards_test,
+    schoenfeld_residuals,
+)
 from .cox_tvc import (
     TimeVaryingSurvivalData,
     expand_to_counting_process,
@@ -52,7 +60,7 @@ from .brier import (
 
 from .utils import observed_causes
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 __all__ = [
     "AalenAdditiveResult",
@@ -60,6 +68,8 @@ __all__ = [
     "CompetingRisksData",
     "ConcordanceResult",
     "CoxPHResult",
+    "ProportionalHazardsTest",
+    "SchoenfeldResiduals",
     "CumulativeHazard",
     "CumulativeIncidence",
     "FineGrayResult",
@@ -72,6 +82,10 @@ __all__ = [
     "SurvivalData",
     "WeibullAFTResult",
     "concordance_index",
+    "deviance_residuals",
+    "martingale_residuals",
+    "proportional_hazards_test",
+    "schoenfeld_residuals",
     "default_truncation_time",
     "exponential_competing_cif",
     "fit_aalen_additive",

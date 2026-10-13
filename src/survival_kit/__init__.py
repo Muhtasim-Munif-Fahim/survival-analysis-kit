@@ -58,6 +58,7 @@ from .brier import (
     km_survival_matrix,
 )
 
+from .time_auc import TimeDependentAUCResult, cumulative_dynamic_auc
 from .utils import observed_causes
 
 __version__ = "0.12.0"
@@ -119,5 +120,7 @@ __all__ = [
     "brier_score",
     "integrated_brier_score",
     "km_survival_matrix",
+    "TimeDependentAUCResult",
+    "cumulative_dynamic_auc",
     "__version__",
 ]

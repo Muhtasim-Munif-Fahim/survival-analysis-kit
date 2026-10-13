@@ -13,6 +13,12 @@ NumPy and SciPy.
   Aalen or Greenwood pointwise variances
 - **Harrell's concordance index** (`concordance`) with an explicit policy for
   tied times (never comparable) and tied scores (half credit)
+- **Time-dependent AUC** (`time_auc`): cumulative/dynamic ROC AUC at chosen
+  horizons with Uno-style inverse-probability-of-censoring weights
+  (`1 / G(T_i-)`, with `G` optionally estimated on a training sample), static
+  or time-varying risk scores, and a KM-weighted `mean_auc`. Harrell's C
+  summarises discrimination over the whole follow-up; this asks "who fails
+  by `t`?" at each horizon
 - **Cox proportional hazards** (`cox`) maximizing the Breslow partial
   likelihood for right-censored data with covariates, returning coefficients,
   hazard ratios, Wald intervals, and a Breslow baseline cumulative hazard
@@ -282,4 +288,30 @@ times = np.linspace(0.5, 5.0, 10)
 surv = km_survival_matrix(durations, events, times)
 result = integrated_brier_score(durations, events, surv, times)
 print(result.ibs)
+```
+
+
+## Time-dependent AUC (cumulative/dynamic)
+
+`cumulative_dynamic_auc` estimates `AUC(t) = P(risk_i > risk_j | T_i <= t, T_j > t)`
+(Heagerty et al., 2000) at each horizon. Cases are subjects with an observed
+event by `t`; controls are subjects still event-free after `t`. Subjects
+censored before `t` are handled with Uno et al. (2007) IPCW: case `i` gets
+weight `1 / G(T_i-)`, where `G` is the censoring Kaplan–Meier, and the controls'
+shared weight cancels. Tied scores get half credit. `mean_auc` weights each
+horizon by the KM survival drop (the scikit-survival convention). Pass
+`train_durations` / `train_events` to estimate `G` on the training sample,
+`ipcw=False` for the naive estimator, or a `(n, n_times)` array for
+time-varying risks such as `1 - S(t | x)`.
+
+```python
+import numpy as np
+from survival_kit import cumulative_dynamic_auc, fit_cox_ph, generate_ph_data
+
+data = generate_ph_data(500, [0.8, -0.5], censor_fraction=0.3, seed=0)
+cox = fit_cox_ph(data.durations, data.events, data.covariates)
+risk = data.covariates @ cox.coefficients
+times = np.quantile(data.durations[data.events], [0.25, 0.5, 0.75])
+res = cumulative_dynamic_auc(data.durations, data.events, risk, times)
+print(res.auc, res.mean_auc)
 ```

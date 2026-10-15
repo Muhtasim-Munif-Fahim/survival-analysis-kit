@@ -50,6 +50,7 @@ from .synth import (
     save_csv,
 )
 
+from .landmarking import LandmarkResult, landmark_dataset, landmark_kaplan_meier, landmark_survival
 from .brier import (
     BrierScoreResult,
     IntegratedBrierResult,
@@ -99,6 +100,10 @@ __all__ = [
     "fit_cumulative_incidence",
     "fit_fine_gray",
     "fit_kaplan_meier",
+    "LandmarkResult",
+    "landmark_dataset",
+    "landmark_kaplan_meier",
+    "landmark_survival",
     "fit_nelson_aalen",
     "fit_weibull_aft",
     "format_p_value",

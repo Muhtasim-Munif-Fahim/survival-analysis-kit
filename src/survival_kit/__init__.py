@@ -28,7 +28,13 @@ from .cox_tvc import (
 )
 from .fine_gray import FineGrayResult, fit_fine_gray
 from .kaplan_meier import SurvivalCurve, fit_kaplan_meier
-from .logrank import LogRankResult, log_rank_test, log_rank_test_groups
+from .logrank import (
+    LogRankResult,
+    WeightedLogRankResult,
+    log_rank_test,
+    log_rank_test_groups,
+    weighted_log_rank_test_groups,
+)
 from .nelson_aalen import CumulativeHazard, fit_nelson_aalen
 from .report import CohortSummary, format_p_value, render_report
 from .rmst import (
@@ -115,6 +121,8 @@ __all__ = [
     "load_csv",
     "log_rank_test",
     "log_rank_test_groups",
+    "weighted_log_rank_test_groups",
+    "WeightedLogRankResult",
     "observed_causes",
     "render_report",
     "restricted_mean_survival_time",

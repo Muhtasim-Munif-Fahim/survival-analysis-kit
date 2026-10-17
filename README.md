@@ -9,6 +9,10 @@ NumPy and SciPy.
   complementary log-log or linear confidence bands
 - **Log-rank tests** (`logrank`) for two-sample and k-group comparisons using
   the hypergeometric covariance of observed minus expected deaths
+- **Weighted and stratified log-rank tests** (`weighted_log_rank_test_groups`):
+  Gehan-Breslow (Wilcoxon), Tarone-Ware, Peto-Peto and Fleming-Harrington
+  `G(rho, gamma)` weights for early or late (delayed-effect) alternatives,
+  with optional strata whose scores and covariances are pooled
 - **Nelson-Aalen estimator** (`nelson_aalen`) for the cumulative hazard with
   Aalen or Greenwood pointwise variances
 - **Harrell's concordance index** (`concordance`) with an explicit policy for
@@ -112,6 +116,8 @@ per-group Kaplan-Meier curves, test the difference, and write a report:
     python -m survival_kit.cli fit --data sample.csv --group-col group \
         --out curves.csv
     python -m survival_kit.cli compare --data sample.csv --group-col group
+    python -m survival_kit.cli compare --data sample.csv --group-col group \
+        --weighting fleming-harrington --rho 0 --gamma 1
     python -m survival_kit.cli rmst --data sample.csv --group-col group --tau 8
     python -m survival_kit.cli cox --data sample.csv --group-col group --out cox.csv
     python -m survival_kit.cli aalen --data sample.csv --covariate-cols x0 x1 --out aalen.csv
@@ -215,6 +221,16 @@ See `examples/run_demo.py` for a complete end-to-end run that writes
 - The k-group log-rank statistic is the quadratic form over the first ``k-1``
   contrasts of the observed-minus-expected vector under the hypergeometric
   covariance.
+- Weighted log-rank tests multiply each event time's observed-minus-expected
+  vector and hypergeometric covariance by ``w(t)``: ``1`` (log-rank),
+  ``n(t)`` (Gehan-Breslow/Wilcoxon), ``sqrt(n(t))`` (Tarone-Ware), the
+  pooled ``prod (1 - d/(n+1))`` (Peto-Peto), or ``S(t-)^rho (1 - S(t-))^gamma``
+  with the pooled left-continuous Kaplan-Meier ``S`` (Fleming-Harrington).
+  ``rho > 0`` emphasises early differences and ``gamma > 0`` late ones;
+  ``G(0, 0)`` is the ordinary log-rank test. With ``strata``, weights and
+  ``S`` are computed within each stratum and the score vectors and
+  covariances are summed before forming the chi-square. Statistics match
+  lifelines' ``multivariate_logrank_test`` on tied data.
 - Concordance pairs sharing an observed time are skipped because their
   ordering is unidentifiable under right censoring.
 - Cox PH uses the Breslow approximation for tied event times, estimates no

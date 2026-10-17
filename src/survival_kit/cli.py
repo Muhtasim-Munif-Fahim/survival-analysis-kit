@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 from datetime import date
 
@@ -21,7 +22,7 @@ from .cox_diagnostics import proportional_hazards_test
 from .cox_tvc import fit_cox_tvc
 from .fine_gray import fit_fine_gray
 from .kaplan_meier import fit_kaplan_meier
-from .logrank import log_rank_test, log_rank_test_groups
+from .logrank import WEIGHTINGS, log_rank_test, log_rank_test_groups, weighted_log_rank_test_groups
 from .report import CohortSummary, render_report
 from .rmst import (
     default_truncation_time,
@@ -75,6 +76,14 @@ def build_parser():
     compare.add_argument("--time-col", default="duration")
     compare.add_argument("--event-col", default="event")
     compare.add_argument("--group-col", required=True)
+    compare.add_argument(
+        "--weighting", choices=WEIGHTINGS, default="log-rank",
+        help="test weight: log-rank (default), wilcoxon (Gehan-Breslow), tarone-ware, "
+        "peto-peto, or fleming-harrington",
+    )
+    compare.add_argument("--rho", type=float, default=0.0, help="Fleming-Harrington rho (early weight)")
+    compare.add_argument("--gamma", type=float, default=0.0, help="Fleming-Harrington gamma (late weight)")
+    compare.add_argument("--strata-col", default=None, help="optional numeric stratification column (e.g. site code)")
 
     report = sub.add_parser("report", help="write a markdown evaluation report")
     report.add_argument("--data", required=True)
@@ -360,7 +369,26 @@ def run_compare(args):
     labels = [str(label) for label in np.unique(groups)]
     if len(labels) < 2:
         raise SystemExit("compare needs at least two distinct groups")
-    if len(labels) == 2:
+    weighting = getattr(args, "weighting", "log-rank")
+    strata_col = getattr(args, "strata_col", None)
+    if weighting != "log-rank" or strata_col:
+        strata = None
+        if strata_col:
+            with open(args.data, newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                if strata_col not in (reader.fieldnames or []):
+                    raise SystemExit(f"column {strata_col!r} not found in {args.data}")
+                strata = np.array([row[strata_col] for row in reader])
+        try:
+            result = weighted_log_rank_test_groups(
+                durations, events, groups, weighting=weighting,
+                rho=args.rho, gamma=args.gamma, strata=strata,
+            )
+        except ValueError as exc:
+            raise SystemExit(f"compare: {exc}")
+        label = weighting if weighting != "fleming-harrington" else f"fleming-harrington(rho={args.rho:g}, gamma={args.gamma:g})"
+        print(f"test: {label}" + (f", stratified by {strata_col} ({result.n_strata} strata)" if strata_col else ""))
+    elif len(labels) == 2:
         first, second = (groups == label for label in labels)
         result = log_rank_test(durations[first], events[first], durations[second], events[second])
     else:

@@ -54,13 +54,22 @@ NumPy and SciPy.
   proportional subdistribution model (IPCW weighted Breslow partial
   likelihood, subdistribution hazard ratios, and a model CIF) rather than
   another cumulative-hazard estimator
+- **Turnbull NPMLE for interval-censored data** (`turnbull`): every other
+  estimator here assumes failures are seen exactly or right-censored; when
+  subjects are only checked at visits (`(left, right]` intervals, with
+  left-, right- and exact observations mixed in) this finds the innermost
+  Turnbull intervals and fits their masses by self-consistency EM with a
+  Kuhn-Tucker support-reduction step, reports upper/lower survival
+  envelopes (the curve is not identified inside innermost intervals), and
+  ships `interval_censor` to turn exact times into inspection intervals.
+  On exact + right-censored data it reduces to Kaplan-Meier
 - **Synthetic data generator** (`synth`) drawing seeded Weibull/exponential
   latents in two arms, with independent exponential censoring calibrated to a
   target censored fraction, plus a Weibull PH covariate generator, an
   independent-exponential competing-risks generator, and CSV input/output
   helpers
 - **Markdown reports** (`report`) and a small CLI (`cli`) wiring the pipeline
-  together: `generate -> fit -> compare -> rmst -> cox -> cox-tvc -> aft -> cif -> finegray -> report`
+  together: `generate -> fit -> compare -> rmst -> cox -> cox-tvc -> aft -> cif -> finegray -> turnbull -> report`
 
 
 ### Cox with time-varying covariates
@@ -75,6 +84,22 @@ From Python:
     from survival_kit import fit_cox_tvc, generate_tvc_data
     data = generate_tvc_data(500, beta=0.8, switch_time=2.0, seed=0)
     fit = fit_cox_tvc(data.start, data.stop, data.events, data.covariates)
+
+### Interval-censored data (Turnbull NPMLE)
+
+CSV columns `left`, `right` (failure in `(left, right]`; `right` = `inf` or
+empty for right-censored, `left == right` for an exact time):
+
+    python -m survival_kit.cli turnbull --data visits.csv --group-col arm \
+        --out npmle.csv
+
+From Python:
+
+    import numpy as np
+    from survival_kit import fit_turnbull, interval_censor
+    left, right = interval_censor(true_times, inspection_times=np.arange(0.5, 5.01, 0.5))
+    fit = fit_turnbull(left, right)
+    fit.survival_at([1.0, 2.0]), fit.median(), fit.max_gradient  # ~1 at the NPMLE
 
 ### Checking proportional hazards
 

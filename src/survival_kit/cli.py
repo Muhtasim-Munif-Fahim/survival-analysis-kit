@@ -1,4 +1,4 @@
-"""Command-line interface wiring generate -> fit -> compare -> cox -> cox-tvc -> aft -> aalen -> finegray -> report."""
+"""Command-line interface wiring generate -> fit -> compare -> cox -> cox-tvc -> aft -> aalen -> finegray -> turnbull -> report."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ from .rmst import (
     restricted_mean_survival_time,
     rmst_difference_test,
 )
+from .turnbull import fit_turnbull
 from .synth import generate_competing_risks_data, generate_survival_data, load_csv, save_csv
 from .utils import observed_causes
 
@@ -204,6 +205,22 @@ def build_parser():
     cox_tvc.add_argument("--event-col", default="event")
     cox_tvc.add_argument("--covariate-cols", nargs="+", required=True)
     cox_tvc.add_argument("--out", required=True)
+
+    turnbull = sub.add_parser(
+        "turnbull",
+        help="Turnbull NPMLE survival curve for interval-censored (left, right] data",
+    )
+    turnbull.add_argument("--data", required=True, help="CSV with left/right interval endpoints")
+    turnbull.add_argument("--left-col", default="left")
+    turnbull.add_argument(
+        "--right-col",
+        default="right",
+        help="right endpoint; 'inf' or empty means right-censored at left",
+    )
+    turnbull.add_argument("--group-col", default=None)
+    turnbull.add_argument("--tol", type=float, default=1e-9)
+    turnbull.add_argument("--max-iter", type=int, default=20000)
+    turnbull.add_argument("--out", required=True)
     return parser
 
 
@@ -876,6 +893,67 @@ def run_cox_tvc(args):
     print(f"wrote Cox TVC estimates to {args.out}")
 
 
+def _parse_right(value):
+    text = str(value).strip().lower()
+    if text in ("", "inf", "+inf", "infinity", "na", "nan", "none"):
+        return float("inf")
+    return float(text)
+
+
+def run_turnbull(args):
+    with open(args.data, newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames is None:
+            raise SystemExit("CSV has no header")
+        rows = list(reader)
+    if not rows:
+        raise SystemExit("CSV has no data rows")
+    needed = [args.left_col, args.right_col] + ([args.group_col] if args.group_col else [])
+    for col in needed:
+        if col not in rows[0]:
+            raise SystemExit(f"missing column: {col}")
+    left = np.asarray([float(r[args.left_col]) for r in rows], dtype=float)
+    right = np.asarray([_parse_right(r[args.right_col]) for r in rows], dtype=float)
+    if args.group_col:
+        groups = np.asarray([r[args.group_col] for r in rows])
+        labels = [str(label) for label in np.unique(groups)]
+    else:
+        groups = np.full(left.shape, "all")
+        labels = ["all"]
+
+    with open(args.out, "w", newline="", encoding="utf-8") as handle:
+        header = "interval_left,interval_right,left_closed,probability,survival_upper,survival_lower"
+        if args.group_col:
+            header += ",group"
+        handle.write(header + "\n")
+        for label in labels:
+            mask = groups == label
+            try:
+                result = fit_turnbull(left[mask], right[mask], tol=args.tol, max_iter=args.max_iter)
+            except ValueError as exc:
+                raise SystemExit(str(exc)) from exc
+            print(
+                f"{label}: n={result.n_observations} (exact={result.n_exact}, "
+                f"left={result.n_left_censored}, interval={result.n_interval_censored}, "
+                f"right={result.n_right_censored}) intervals={result.n_intervals} "
+                f"iterations={result.n_iterations} converged={result.converged} "
+                f"max_gradient={result.max_gradient:.6f} loglik={result.log_likelihood:.6f} "
+                f"median={result.median():.4g}"
+            )
+            upper = result.survival_at(result.right)
+            lower = result.survival_at(result.left, envelope="lower")
+            for j in range(result.n_intervals):
+                row = (
+                    f"{result.left[j]:.10g},{result.right[j]:.10g},"
+                    f"{int(result.left_closed[j])},{result.probabilities[j]:.10g},"
+                    f"{upper[j]:.10g},{lower[j]:.10g}"
+                )
+                if args.group_col:
+                    row += f",{label}"
+                handle.write(row + "\n")
+    print(f"wrote Turnbull NPMLE intervals to {args.out}")
+
+
 COMMANDS = {
     "generate": run_generate,
     "fit": run_fit,
@@ -889,6 +967,7 @@ COMMANDS = {
     "aft": run_aft,
     "finegray": run_finegray,
     "cox-tvc": run_cox_tvc,
+    "turnbull": run_turnbull,
 }
 
 

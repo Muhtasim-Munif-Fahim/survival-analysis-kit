@@ -65,10 +65,11 @@ from .brier import (
     km_survival_matrix,
 )
 
+from .turnbull import TurnbullResult, fit_turnbull, interval_censor, turnbull_intervals
 from .time_auc import TimeDependentAUCResult, cumulative_dynamic_auc
 from .utils import observed_causes
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 
 __all__ = [
     "AalenAdditiveResult",
@@ -135,5 +136,9 @@ __all__ = [
     "km_survival_matrix",
     "TimeDependentAUCResult",
     "cumulative_dynamic_auc",
+    "TurnbullResult",
+    "fit_turnbull",
+    "interval_censor",
+    "turnbull_intervals",
     "__version__",
 ]

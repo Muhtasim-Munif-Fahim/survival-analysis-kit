@@ -66,12 +66,24 @@ from .brier import (
 )
 
 from .turnbull import TurnbullResult, fit_turnbull, interval_censor, turnbull_intervals
+from .calibration import (
+    DCalibrationResult,
+    OneCalibrationResult,
+    d_calibration,
+    one_calibration,
+    survival_at_observed,
+)
 from .time_auc import TimeDependentAUCResult, cumulative_dynamic_auc
 from .utils import observed_causes
 
 __version__ = "0.13.0"
 
 __all__ = [
+    "DCalibrationResult",
+    "OneCalibrationResult",
+    "d_calibration",
+    "one_calibration",
+    "survival_at_observed",
     "AalenAdditiveResult",
     "CohortSummary",
     "CompetingRisksData",

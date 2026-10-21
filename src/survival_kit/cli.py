@@ -1,4 +1,4 @@
-"""Command-line interface wiring generate -> fit -> compare -> cox -> cox-tvc -> aft -> aalen -> finegray -> turnbull -> report."""
+"""Command-line interface wiring generate -> fit -> compare -> cox -> cox-tvc -> aft -> aalen -> finegray -> turnbull -> calibration -> report."""
 
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ from .rmst import (
     rmst_difference_test,
 )
 from .turnbull import fit_turnbull
+from .calibration import d_calibration, one_calibration
 from .synth import generate_competing_risks_data, generate_survival_data, load_csv, save_csv
 from .utils import observed_causes
 
@@ -221,6 +222,21 @@ def build_parser():
     turnbull.add_argument("--tol", type=float, default=1e-9)
     turnbull.add_argument("--max-iter", type=int, default=20000)
     turnbull.add_argument("--out", required=True)
+
+    cal = sub.add_parser(
+        "calibration",
+        help="D-calibration and D'Agostino-Nam 1-calibration of predicted survival",
+    )
+    cal.add_argument("--data", required=True, help="CSV with observed time, event and predicted survival")
+    cal.add_argument("--time-col", default="time")
+    cal.add_argument("--event-col", default="event")
+    cal.add_argument("--surv-col", required=True, help="predicted S_i(T_i) at each subject's observed time")
+    cal.add_argument("--bins", type=int, default=10)
+    cal.add_argument("--horizon", type=float, default=None, help="horizon t for 1-calibration")
+    cal.add_argument("--surv-at-horizon-col", default=None, help="predicted S_i(t) for 1-calibration")
+    cal.add_argument("--groups", type=int, default=10)
+    cal.add_argument("--variance", choices=["binomial", "greenwood"], default="binomial")
+    cal.add_argument("--out", required=True, help="JSON output path")
     return parser
 
 
@@ -954,6 +970,77 @@ def run_turnbull(args):
     print(f"wrote Turnbull NPMLE intervals to {args.out}")
 
 
+def run_calibration(args):
+    import json
+
+    with open(args.data, newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        raise SystemExit("CSV has no data rows")
+    needed = [args.time_col, args.event_col, args.surv_col]
+    if (args.horizon is None) != (args.surv_at_horizon_col is None):
+        raise SystemExit("--horizon and --surv-at-horizon-col must be given together")
+    if args.surv_at_horizon_col:
+        needed.append(args.surv_at_horizon_col)
+    for col in needed:
+        if col not in rows[0]:
+            raise SystemExit(f"missing column: {col}")
+    durations = np.asarray([float(r[args.time_col]) for r in rows])
+    events = np.asarray([int(float(r[args.event_col])) for r in rows], dtype=bool)
+    surv = np.asarray([float(r[args.surv_col]) for r in rows])
+    try:
+        dres = d_calibration(durations, events, surv, n_bins=args.bins)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    verdict = "calibrated" if dres.calibrated else "NOT calibrated"
+    print(
+        f"D-calibration: chi2={dres.statistic:.4f} df={dres.df} p={dres.p_value:.4g} ({verdict} at 5%), "
+        f"max |bin - 1/B| = {dres.max_deviation:.4f}"
+    )
+    print("  bin proportions: " + " ".join(f"{p:.3f}" for p in dres.proportions))
+    payload = {
+        "d_calibration": {
+            "bin_edges": dres.bin_edges.tolist(),
+            "counts": dres.counts.tolist(),
+            "proportions": dres.proportions.tolist(),
+            "statistic": dres.statistic,
+            "df": dres.df,
+            "p_value": dres.p_value,
+            "n_observations": dres.n_observations,
+            "n_events": dres.n_events,
+        }
+    }
+    if args.horizon is not None:
+        s_t = np.asarray([float(r[args.surv_at_horizon_col]) for r in rows])
+        try:
+            ores = one_calibration(
+                durations, events, s_t, args.horizon, n_groups=args.groups, variance=args.variance
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        verdict = "calibrated" if ores.calibrated else "NOT calibrated"
+        print(
+            f"1-calibration at t={ores.horizon:g} ({args.variance}): "
+            f"chi2={ores.statistic:.4f} df={ores.df} p={ores.p_value:.4g} ({verdict} at 5%)"
+        )
+        for row in ores.table():
+            print(
+                f"  group {row['group']:>2}: n={row['n']:<5} predicted={row['predicted_event_prob']:.3f} "
+                f"observed={row['observed_event_prob']:.3f}"
+            )
+        payload["one_calibration"] = {
+            "horizon": ores.horizon,
+            "variance": args.variance,
+            "statistic": ores.statistic,
+            "df": ores.df,
+            "p_value": ores.p_value,
+            "groups": ores.table(),
+        }
+    with open(args.out, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+    print(f"wrote calibration results to {args.out}")
+
+
 COMMANDS = {
     "generate": run_generate,
     "fit": run_fit,
@@ -968,6 +1055,7 @@ COMMANDS = {
     "finegray": run_finegray,
     "cox-tvc": run_cox_tvc,
     "turnbull": run_turnbull,
+    "calibration": run_calibration,
 }
 
 

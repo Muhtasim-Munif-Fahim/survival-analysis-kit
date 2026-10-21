@@ -5,6 +5,7 @@ NumPy and SciPy.
 
 ## Features
 
+- **Calibration tests**: D-calibration (Haider et al. 2020) of whole predicted survival distributions, and D'Agostino-Nam 1-calibration at a horizon with binomial or Greenwood variance (`calibration` CLI).
 - **Kaplan-Meier estimator** (`kaplan_meier`) with Greenwood variance and
   complementary log-log or linear confidence bands
 - **Log-rank tests** (`logrank`) for two-sample and k-group comparisons using
@@ -355,4 +356,35 @@ risk = data.covariates @ cox.coefficients
 times = np.quantile(data.durations[data.events], [0.25, 0.5, 0.75])
 res = cumulative_dynamic_auc(data.durations, data.events, risk, times)
 print(res.auc, res.mean_auc)
+```
+
+## Calibration: D-calibration and 1-calibration
+
+Discrimination metrics (C-index, time-dependent AUC) do not tell you whether predicted probabilities can be trusted. `survival_kit.calibration` adds two calibration tests for right-censored data:
+
+- **D-calibration** (Haider et al., JMLR 2020) checks whether whole predicted curves are calibrated *as distributions*. If they are, `S_i(T_i)` is Uniform(0, 1).
+  - Events are binned into `B` equal bins.
+  - A subject censored with `s = S_i(c)` has its unit of mass spread uniformly over `[0, s]`.
+  - The bins are then compared with `n / B` using a chi-square test with `B - 1` df.
+- **1-calibration** at a horizon `t` is the D'Agostino-Nam (2003) Hosmer-Lemeshow test.
+  - Subjects are split into `G` risk groups.
+  - Each group's Kaplan-Meier observed event probability `1 - KM_g(t)` is compared with its mean predicted risk.
+  - `variance="binomial"` gives the classic test with `G - 1` df. `variance="greenwood"` uses Greenwood variance (Demler et al., 2015) with `G` df.
+
+Both functions match `SurvivalEVAL` (`d_calibration`, `one_calibration`) to about 1e-13. This was checked offline on 100 random censored data sets, and reference values are pinned in the tests.
+
+```python
+from survival_kit import d_calibration, one_calibration, survival_at_observed
+
+s_obs = survival_at_observed(surv_matrix, times, durations)  # S_i(T_i) from an (n, n_times) matrix
+d = d_calibration(durations, events, s_obs, n_bins=10)
+d.statistic, d.p_value, d.proportions, d.calibrated
+
+one = one_calibration(durations, events, surv_at_t, horizon=5.0, n_groups=10)
+one.table()   # per group: n, predicted vs observed event probability
+```
+
+```bash
+survival-kit calibration --data preds.csv --surv-col surv_at_time \
+    --horizon 5 --surv-at-horizon-col surv_5 --variance greenwood --out calibration.json
 ```

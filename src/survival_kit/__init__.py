@@ -27,6 +27,15 @@ from .cox_tvc import (
     generate_tvc_data,
 )
 from .fine_gray import FineGrayResult, fit_fine_gray
+from .penalized_cox import (
+    PenalizedCoxCVResult,
+    PenalizedCoxPath,
+    PenalizedCoxResult,
+    cv_penalized_cox,
+    fit_penalized_cox,
+    penalized_cox_lambda_max,
+    penalized_cox_path,
+)
 from .kaplan_meier import SurvivalCurve, fit_kaplan_meier
 from .logrank import (
     LogRankResult,
@@ -118,6 +127,13 @@ __all__ = [
     "TimeVaryingSurvivalData",
     "fit_cumulative_incidence",
     "fit_fine_gray",
+    "PenalizedCoxResult",
+    "PenalizedCoxPath",
+    "PenalizedCoxCVResult",
+    "fit_penalized_cox",
+    "penalized_cox_lambda_max",
+    "penalized_cox_path",
+    "cv_penalized_cox",
     "fit_kaplan_meier",
     "LandmarkResult",
     "landmark_dataset",

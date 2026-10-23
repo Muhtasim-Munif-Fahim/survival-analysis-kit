@@ -49,6 +49,9 @@ NumPy and SciPy.
 - **Competing-risks cumulative incidence** (`competing_risks`) via the
   Aalen-Johansen / cause-specific CIF, Aalen (Coviello-Boggess) pointwise
   variances, and Gray's k-sample test of subdistribution equality
+- **Elastic-net penalized Cox** (`penalized_cox`): lasso / ridge / elastic-net
+  Breslow partial likelihood via proximal Newton, warm-started lambda paths, and
+  Verweij-van Houwelingen cross-validated partial likelihood (lambda_min, lambda_1se)
 - **Fine-Gray subdistribution hazard** (`fine_gray`) for one competing cause.
   Nelson-Aalen cumulative hazard estimation, with optional Aalen or Greenwood
   variance, is already provided by `nelson_aalen`, so this addition is the
@@ -387,4 +390,18 @@ one.table()   # per group: n, predicted vs observed event probability
 ```bash
 survival-kit calibration --data preds.csv --surv-col surv_at_time \
     --horizon 5 --surv-at-horizon-col surv_5 --variance greenwood --out calibration.json
+```
+
+## Elastic-net penalized Cox
+
+`fit_penalized_cox` minimises `-(1/n) l(beta) + lambda * [alpha*|beta|_1 + (1-alpha)/2*|beta|_2^2]`
+(glmnet scaling, Breslow ties) on standardised covariates and returns coefficients on the
+original scale. `penalized_cox_path` fits a warm-started decreasing lambda grid from
+`penalized_cox_lambda_max`, and `cv_penalized_cox` selects lambda by the
+Verweij-van Houwelingen cross-validated partial likelihood deviance.
+
+```python
+from survival_kit import cv_penalized_cox
+cv = cv_penalized_cox(durations, events, X, alpha=0.5, n_folds=5, random_state=0)
+print(cv.lambda_min, cv.lambda_1se, cv.coefficients_1se)
 ```

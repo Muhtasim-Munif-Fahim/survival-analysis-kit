@@ -1,4 +1,4 @@
-"""Command-line interface wiring generate -> fit -> compare -> cox -> cox-tvc -> aft -> aalen -> finegray -> turnbull -> calibration -> report."""
+"""Command-line interface wiring generate -> fit -> compare -> cox -> cox-tvc -> aft -> aalen -> finegray -> turnbull -> calibration -> hazard -> report."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from .cox import fit_cox_ph
 from .cox_diagnostics import proportional_hazards_test
 from .cox_tvc import fit_cox_tvc
 from .fine_gray import fit_fine_gray
+from .hazard_smoothing import KERNELS, fit_smoothed_hazard, select_bandwidth_cv
 from .kaplan_meier import fit_kaplan_meier
 from .logrank import WEIGHTINGS, log_rank_test, log_rank_test_groups, weighted_log_rank_test_groups
 from .report import CohortSummary, render_report
@@ -237,6 +238,26 @@ def build_parser():
     cal.add_argument("--groups", type=int, default=10)
     cal.add_argument("--variance", choices=["binomial", "greenwood"], default="binomial")
     cal.add_argument("--out", required=True, help="JSON output path")
+
+    hz = sub.add_parser(
+        "hazard",
+        help="Ramlau-Hansen kernel-smoothed hazard rate with boundary kernels",
+    )
+    hz.add_argument("--data", required=True)
+    hz.add_argument("--time-col", default="duration")
+    hz.add_argument("--event-col", default="event")
+    hz.add_argument("--group-col", default=None)
+    hz.add_argument("--kernel", choices=list(KERNELS), default="epanechnikov")
+    hz.add_argument(
+        "--bandwidth",
+        default=None,
+        help="kernel bandwidth b; 'cv' picks it by least-squares cross-validation "
+        "(default: a quarter of the event-time range)",
+    )
+    hz.add_argument("--points", type=int, default=101, help="evaluation grid size")
+    hz.add_argument("--no-boundary-correction", action="store_true")
+    hz.add_argument("--confidence", type=float, default=0.95)
+    hz.add_argument("--out", required=True, help="CSV output path")
     return parser
 
 
@@ -1041,6 +1062,56 @@ def run_calibration(args):
     print(f"wrote calibration results to {args.out}")
 
 
+def run_hazard(args):
+    durations, events, groups, _ = _load(args)
+    labels = _cohort_labels(args, groups)
+    boundary = not args.no_boundary_correction
+    rows = []
+    for label in labels:
+        mask = _cohort_mask(groups, label)
+        d, e = durations[mask], events[mask]
+        try:
+            if args.bandwidth is None:
+                bandwidth = None
+            elif str(args.bandwidth).lower() == "cv":
+                bandwidth = select_bandwidth_cv(
+                    d, e, kernel_name=args.kernel, boundary_correction=boundary
+                ).best_bandwidth
+            else:
+                bandwidth = float(args.bandwidth)
+            fit = fit_smoothed_hazard(
+                d,
+                e,
+                bandwidth=bandwidth,
+                kernel_name=args.kernel,
+                n_points=args.points,
+                boundary_correction=boundary,
+                confidence_level=args.confidence,
+            )
+        except ValueError as exc:
+            raise SystemExit(f"{label}: {exc}") from exc
+        peak = int(np.argmax(fit.hazard))
+        print(
+            f"{label}: n={int(mask.sum())}, events={int(e.sum())}, "
+            f"bandwidth={fit.bandwidth:.4g} ({fit.kernel}), "
+            f"peak hazard={fit.hazard[peak]:.4g} at t={fit.time[peak]:.4g}"
+        )
+        rows.append((label, fit))
+    with open(args.out, "w", newline="", encoding="utf-8") as handle:
+        header = "time,hazard,std_err,ci_lower,ci_upper,bandwidth"
+        handle.write(header + (",cohort\n" if args.group_col else "\n"))
+        for label, fit in rows:
+            for i in range(fit.time.size):
+                row = (
+                    f"{fit.time[i]:.6f},{fit.hazard[i]:.6g},{fit.std_err[i]:.6g},"
+                    f"{fit.ci_lower[i]:.6g},{fit.ci_upper[i]:.6g},{fit.bandwidth:.6g}"
+                )
+                if args.group_col:
+                    row += f",{label}"
+                handle.write(row + "\n")
+    print(f"wrote smoothed hazard to {args.out}")
+
+
 COMMANDS = {
     "generate": run_generate,
     "fit": run_fit,
@@ -1056,6 +1127,7 @@ COMMANDS = {
     "cox-tvc": run_cox_tvc,
     "turnbull": run_turnbull,
     "calibration": run_calibration,
+    "hazard": run_hazard,
 }
 
 

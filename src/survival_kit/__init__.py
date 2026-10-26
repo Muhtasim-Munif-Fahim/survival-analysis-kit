@@ -36,6 +36,13 @@ from .penalized_cox import (
     penalized_cox_lambda_max,
     penalized_cox_path,
 )
+from .hazard_smoothing import (
+    BandwidthCVResult,
+    SmoothedHazard,
+    boundary_kernel,
+    fit_smoothed_hazard,
+    select_bandwidth_cv,
+)
 from .kaplan_meier import SurvivalCurve, fit_kaplan_meier
 from .logrank import (
     LogRankResult,
@@ -140,6 +147,11 @@ __all__ = [
     "landmark_kaplan_meier",
     "landmark_survival",
     "fit_nelson_aalen",
+    "BandwidthCVResult",
+    "SmoothedHazard",
+    "boundary_kernel",
+    "fit_smoothed_hazard",
+    "select_bandwidth_cv",
     "fit_weibull_aft",
     "format_p_value",
     "generate_competing_risks_data",

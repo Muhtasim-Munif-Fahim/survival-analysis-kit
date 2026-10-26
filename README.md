@@ -14,6 +14,11 @@ NumPy and SciPy.
   Gehan-Breslow (Wilcoxon), Tarone-Ware, Peto-Peto and Fleming-Harrington
   `G(rho, gamma)` weights for early or late (delayed-effect) alternatives,
   with optional strata whose scores and covariances are pooled
+- **Kernel-smoothed hazard** (`hazard_smoothing`): Ramlau-Hansen hazard
+  rate `h(t) = b⁻¹ Σ K((t − t_j)/b) ΔĤ_j` with uniform, Epanechnikov or
+  biweight kernels, Müller-Wang boundary kernels near 0 and the last event,
+  log-transformed pointwise CIs and least-squares cross-validated bandwidth
+  (`survival-kit hazard`).
 - **Nelson-Aalen estimator** (`nelson_aalen`) for the cumulative hazard with
   Aalen or Greenwood pointwise variances
 - **Harrell's concordance index** (`concordance`) with an explicit policy for
@@ -391,6 +396,25 @@ one.table()   # per group: n, predicted vs observed event probability
 survival-kit calibration --data preds.csv --surv-col surv_at_time \
     --horizon 5 --surv-at-horizon-col surv_5 --variance greenwood --out calibration.json
 ```
+
+## Kernel-smoothed hazard rate
+
+The Nelson-Aalen increments are smoothed into a hazard *rate* (Ramlau-Hansen 1983; Klein & Moeschberger §6.2):
+
+```python
+from survival_kit import fit_smoothed_hazard, select_bandwidth_cv
+
+b = select_bandwidth_cv(durations, events, kernel_name="epanechnikov").best_bandwidth
+hz = fit_smoothed_hazard(durations, events, bandwidth=b, n_points=101)
+hz.time, hz.hazard, hz.ci_lower, hz.ci_upper
+```
+
+```bash
+survival-kit hazard --data data.csv --group-col group --bandwidth cv --kernel biweight --out hazard.csv
+```
+
+- Variance `b⁻² Σ K²((t − t_j)/b) d_j/n_j²`; CIs `h(t)·exp(±z·SE/h(t))`.
+- With boundary correction (default) the grid spans `[0, t_D]` and uses boundary kernels `K_q(x) = K(x)(α(q) + β(q)x)`, which keep unit mass and zero first moment, so the estimate is not halved at `t = 0`. This requires `b ≤ t_D / 2`; pass `boundary_correction=False` / `--no-boundary-correction` to evaluate on `[b, t_D − b]` with the symmetric kernel.
 
 ## Elastic-net penalized Cox
 

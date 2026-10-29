@@ -51,6 +51,14 @@ NumPy and SciPy.
   kit, so the parametric addition is a Weibull AFT fit (time ratios,
   shape/scale, Wald intervals, and a likelihood-ratio test) rather than a
   second nonparametric curve
+- **Mixture cure model** (`cure`): `fit_mixture_cure` fits
+  `S_pop(t | x, z) = 1 - p(z) + p(z) S_u(t | x)`, with a logistic incidence for being
+  uncured and a Weibull AFT latency for the uncured (Farewell 1982; Sy & Taylor 2000).
+  It maximises the full right-censored likelihood directly with an analytic gradient
+  and returns Wald SEs, odds ratios, time ratios, and the cure fraction with a CI.
+  It also predicts population and uncured survival and per-subject posterior cure
+  probabilities, reports AIC against a plain Weibull AFT, and gives a
+  boundary-corrected LR test for a cure fraction. `generate_cure_data` simulates such data
 - **Competing-risks cumulative incidence** (`competing_risks`) via the
   Aalen-Johansen / cause-specific CIF, Aalen (Coviello-Boggess) pointwise
   variances, and Gray's k-sample test of subdistribution equality
@@ -314,6 +322,24 @@ See `examples/run_demo.py` for a complete end-to-end run that writes
   matches ``fit_cox_ph``. Gray's chi-square uses the hypergeometric covariance
   of that score at the null, so it is close to the model score test but is
   not the same finite-sample statistic as the Wald or likelihood-ratio test.
+
+- Mixture cure model: events contribute `log p + log f_u(t)`, and censored subjects
+  contribute `log(1 - p + p S_u(t))`. A censored subject's posterior cure probability is
+  `(1 - p) / S_pop(t)`. The cure fraction is identifiable only with sufficient follow-up,
+  meaning a KM plateau made up of censored subjects after the last event.
+  - With no cure fraction, the incidence intercept drifts to the boundary
+    (`p -> 1`). The model then reduces to the Weibull AFT, and the Wald SE of the
+    incidence intercept is not meaningful.
+  - The LR test uses the `0.5 chi2_0 + 0.5 chi2_1` boundary mixture.
+
+```python
+from survival_kit import fit_mixture_cure, generate_cure_data
+d, e, x, _ = generate_cure_data(2000, cure_fraction=0.35, incidence_coef=1.0, random_state=0)
+cure = fit_mixture_cure(d, e, incidence_covariates=x, latency_covariates=x)
+cure.cure_fraction, cure.odds_ratios, cure.time_ratios, cure.cure_vs_no_cure_p_value
+cure.survival([1, 5, 20], incidence_covariates=[[0.0]], latency_covariates=[[0.0]])
+cure.posterior_cure_probability(d, e, x[:, None], x[:, None])
+```
 
 ## Testing
 

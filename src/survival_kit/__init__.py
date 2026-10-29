@@ -2,6 +2,7 @@
 
 from .aalen import AalenAdditiveResult, fit_aalen_additive
 from .aft import WeibullAFTResult, fit_weibull_aft
+from .cure import MixtureCureResult, fit_mixture_cure, generate_cure_data, mixture_cure_log_likelihood
 from .competing_risks import (
     CumulativeIncidence,
     GrayTestResult,
@@ -118,6 +119,10 @@ __all__ = [
     "SurvivalCurve",
     "SurvivalData",
     "WeibullAFTResult",
+    "MixtureCureResult",
+    "fit_mixture_cure",
+    "generate_cure_data",
+    "mixture_cure_log_likelihood",
     "concordance_index",
     "deviance_residuals",
     "martingale_residuals",

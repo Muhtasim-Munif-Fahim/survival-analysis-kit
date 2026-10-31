@@ -2,6 +2,7 @@
 
 from .aalen import AalenAdditiveResult, fit_aalen_additive
 from .aft import WeibullAFTResult, fit_weibull_aft
+from .gompertz import GompertzResult, fit_gompertz, generate_gompertz_data, gompertz_log_likelihood
 from .cure import MixtureCureResult, fit_mixture_cure, generate_cure_data, mixture_cure_log_likelihood
 from .competing_risks import (
     CumulativeIncidence,
@@ -119,6 +120,10 @@ __all__ = [
     "SurvivalCurve",
     "SurvivalData",
     "WeibullAFTResult",
+    "GompertzResult",
+    "fit_gompertz",
+    "generate_gompertz_data",
+    "gompertz_log_likelihood",
     "MixtureCureResult",
     "fit_mixture_cure",
     "generate_cure_data",

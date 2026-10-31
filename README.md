@@ -455,3 +455,19 @@ from survival_kit import cv_penalized_cox
 cv = cv_penalized_cox(durations, events, X, alpha=0.5, n_folds=5, random_state=0)
 print(cv.lambda_min, cv.lambda_1se, cv.coefficients_1se)
 ```
+
+## Gompertz proportional-hazards regression
+
+`fit_gompertz(durations, events, covariates=None)` fits the parametric Gompertz PH model `h(t | x) = b * exp(g t) * exp(x @ beta)` to right-censored data by maximum likelihood, using an analytic gradient and an observed-information covariance. Pass `covariates=None` for the one-sample model.
+
+- `g > 0` means the hazard ages upward (mortality-style), `g = 0` is the exponential model, and `g < 0` is a decreasing hazard with a cured fraction (`result.cure_fraction(x)`).
+- The result reports hazard ratios with CIs, AIC, and a likelihood-ratio test of `g = 0` against the exponential fit (`shape_lr_p_value`).
+- Predictions: `survival_function`, `cumulative_hazard`, `hazard`, `median_survival_time` and `quantile_survival_time`. The quantile methods return `inf` when a defective curve never falls that low.
+- `generate_gompertz_data(n, b, g, coefficients)` simulates data for experiments.
+
+```python
+from survival_kit import fit_gompertz, generate_gompertz_data
+t, e, X = generate_gompertz_data(2000, b=0.05, g=0.3, coefficients=[0.7, -0.5], random_state=0)
+fit = fit_gompertz(t, e, X, feature_names=["age", "dose"])
+print(fit.g, fit.hazard_ratios, fit.median_survival_time(X[:3]))
+```

@@ -46,6 +46,11 @@ from .hazard_smoothing import (
     select_bandwidth_cv,
 )
 from .kaplan_meier import SurvivalCurve, fit_kaplan_meier
+from .piecewise_exponential import (
+    PiecewiseExponentialResult,
+    fit_piecewise_exponential,
+    piecewise_exponential_data,
+)
 from .logrank import (
     LogRankResult,
     WeightedLogRankResult,
@@ -152,6 +157,9 @@ __all__ = [
     "penalized_cox_path",
     "cv_penalized_cox",
     "fit_kaplan_meier",
+    "PiecewiseExponentialResult",
+    "fit_piecewise_exponential",
+    "piecewise_exponential_data",
     "LandmarkResult",
     "landmark_dataset",
     "landmark_kaplan_meier",

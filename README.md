@@ -5,6 +5,7 @@ NumPy and SciPy.
 
 ## Features
 
+- **Piecewise exponential PH model** (`fit_piecewise_exponential`): a hazard that is constant within intervals, `lambda_k * exp(x @ beta)`, fit by profile-likelihood Newton-Raphson. It returns interval rates, hazard ratios with CIs, a likelihood-ratio test, survival, hazard and median predictions, and the person-period (Poisson) expansion `piecewise_exponential_data`.
 - **Calibration tests**: D-calibration (Haider et al. 2020) of whole predicted survival distributions, and D'Agostino-Nam 1-calibration at a horizon with binomial or Greenwood variance (`calibration` CLI).
 - **Kaplan-Meier estimator** (`kaplan_meier`) with Greenwood variance and
   complementary log-log or linear confidence bands
@@ -470,4 +471,30 @@ from survival_kit import fit_gompertz, generate_gompertz_data
 t, e, X = generate_gompertz_data(2000, b=0.05, g=0.3, coefficients=[0.7, -0.5], random_state=0)
 fit = fit_gompertz(t, e, X, feature_names=["age", "dose"])
 print(fit.g, fit.hazard_ratios, fit.median_survival_time(X[:3]))
+```
+
+## Piecewise exponential proportional-hazards model
+
+`fit_piecewise_exponential(durations, events, covariates=None, breakpoints=5)`
+fits `h(t | x) = lambda_k * exp(x @ beta)` on the intervals `[0, c_1), [c_1, c_2), ..., [c_{K-1}, inf)`.
+This sits between the exponential model (`breakpoints=1`) and Cox: with many
+intervals, `beta` approaches the Cox estimate, and survival curves and
+medians stay closed-form. `breakpoints` is either the number of intervals
+(cut at event-time quantiles) or an explicit increasing list of cut points.
+
+For fixed `beta`, the rates are `lambda_k = D_k / sum_i E_ik exp(x_i beta)`. The
+concave profile log-likelihood is maximized by Newton-Raphson using an
+analytic gradient and Hessian. Standard errors come from the full observed
+information of `(log lambda, beta)`. Intervals without events get
+`lambda_k = 0` and a `nan` standard error. `piecewise_exponential_data`
+expands subjects into person-period rows (`id, interval, start, stop,
+exposure, event, covariates`). A Poisson GLM with `log(exposure)` offset on
+these rows gives the same fit.
+
+```python
+from survival_kit import fit_piecewise_exponential
+fit = fit_piecewise_exponential(t, e, X, breakpoints=[1.0, 3.0], feature_names=["age", "dose"])
+print(fit.baseline_hazards, fit.hazard_ratios, fit.lr_p_value)
+print(fit.survival_function([1, 2, 5], X[:3]), fit.median_survival_time(X[:3]))
+print(fit.summary())
 ```

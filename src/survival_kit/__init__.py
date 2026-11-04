@@ -97,6 +97,14 @@ from .calibration import (
     survival_at_observed,
 )
 from .time_auc import TimeDependentAUCResult, cumulative_dynamic_auc
+from .sample_size import (
+    LogRankSampleSize,
+    event_probability,
+    hazard_from_median,
+    logrank_power,
+    logrank_required_events,
+    logrank_sample_size,
+)
 from .utils import observed_causes
 
 __version__ = "0.13.0"
@@ -198,5 +206,11 @@ __all__ = [
     "fit_turnbull",
     "interval_censor",
     "turnbull_intervals",
+    "LogRankSampleSize",
+    "event_probability",
+    "hazard_from_median",
+    "logrank_power",
+    "logrank_required_events",
+    "logrank_sample_size",
     "__version__",
 ]

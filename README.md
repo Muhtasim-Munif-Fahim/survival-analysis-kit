@@ -498,3 +498,21 @@ print(fit.baseline_hazards, fit.hazard_ratios, fit.lr_p_value)
 print(fit.survival_function([1, 2, 5], X[:3]), fit.median_survival_time(X[:3]))
 print(fit.summary())
 ```
+
+## Log-rank sample size and power
+
+`survival_kit.sample_size` plans two-arm trials analysed with the log-rank test:
+
+```python
+from survival_kit import logrank_required_events, logrank_power, logrank_sample_size
+
+logrank_required_events(0.5)                       # Schoenfeld: 66 events (5% two-sided, 80% power)
+logrank_required_events(0.5, method="freedman")    # Freedman: 71 events
+logrank_power(120, 0.7)                            # power after 120 events
+plan = logrank_sample_size(0.7, control_median=12, accrual=24, follow_up=12, dropout_hazard=0.01)
+print(plan.events, plan.event_probability, plan.n_control, plan.n_treatment)
+```
+
+Event probabilities assume exponential event and drop-out times, with uniform accrual over
+`[0, accrual]` and then `follow_up` more time units. Unequal allocation is set with
+`allocation` (the treatment share).

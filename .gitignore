@@ -8,4 +8,4 @@ dist/
 venv/
 .coverage
 htmlcov/
-examples/output/
+examples/output/.venv/

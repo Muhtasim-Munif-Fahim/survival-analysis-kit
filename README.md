@@ -346,6 +346,21 @@ cure.posterior_cure_probability(d, e, x[:, None], x[:, None])
 
     python -m pytest tests -q
 
+
+## Conditional survival and mean residual life
+
+Given survival to a landmark `t0`, conditional survival is `S(t0+s)/S(t0)` and
+the (restricted) mean residual life is the remaining area under the Kaplan-Meier
+curve divided by `S(t0)`:
+
+```python
+from survival_kit import conditional_survival, mean_residual_life, fit_kaplan_meier
+
+km = fit_kaplan_meier(durations, events)
+cs = conditional_survival(landmark=12.0, horizons=[6, 12, 24], curve=km)
+mrl = mean_residual_life([0, 6, 12], curve=km)  # restricted to last event time
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

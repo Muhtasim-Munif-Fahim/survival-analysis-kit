@@ -5,6 +5,7 @@ NumPy and SciPy.
 
 ## Features
 
+- **Censoring-robust concordance** (`uno_concordance_index`, `gonen_heller_cpe`): Uno's IPCW truncated C-statistic with a bootstrap CI, and the Gönen-Heller concordance probability estimate for Cox linear predictors.
 - **Piecewise exponential PH model** (`fit_piecewise_exponential`): a hazard that is constant within intervals, `lambda_k * exp(x @ beta)`, fit by profile-likelihood Newton-Raphson. It returns interval rates, hazard ratios with CIs, a likelihood-ratio test, survival, hazard and median predictions, and the person-period (Poisson) expansion `piecewise_exponential_data`.
 - **Calibration tests**: D-calibration (Haider et al. 2020) of whole predicted survival distributions, and D'Agostino-Nam 1-calibration at a horizon with binomial or Greenwood variance (`calibration` CLI).
 - **Kaplan-Meier estimator** (`kaplan_meier`) with Greenwood variance and
@@ -382,6 +383,19 @@ result = integrated_brier_score(durations, events, surv, times)
 print(result.ibs)
 ```
 
+
+## Censoring-robust concordance (Uno's C and Gönen-Heller CPE)
+
+Harrell's C depends on the censoring pattern. `uno_concordance_index` (Uno et al., 2011) weights each comparable pair `(i, j)` with `T_i < T_j < ...`, `delta_i = 1`, `T_i < tau` by `G(T_i-)^-2`, where `G` is the Kaplan-Meier censoring survival (optionally from a training sample). The result estimates `P(eta_i > eta_j | T_i < T_j, T_i < tau)`, which does not depend on censoring. A nonparametric bootstrap gives a standard error and a percentile CI. `gonen_heller_cpe` (Gönen & Heller, 2005) is the concordance probability estimate for a Cox linear predictor. It uses only `x @ beta`, so under proportional hazards censoring cannot bias it.
+
+```python
+from survival_kit import uno_concordance_index, gonen_heller_cpe
+
+res = uno_concordance_index(durations, events, risk, tau=24.0,
+                            train_durations=train_d, train_events=train_e, n_bootstrap=200, seed=0)
+res.c_index, res.std_err, (res.ci_lower, res.ci_upper)
+gonen_heller_cpe(X @ cox.coefficients)
+```
 
 ## Time-dependent AUC (cumulative/dynamic)
 

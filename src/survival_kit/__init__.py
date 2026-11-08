@@ -19,6 +19,7 @@ from .conditional_survival import (
     mean_residual_life,
 )
 from .concordance import ConcordanceResult, concordance_index
+from .ipcw_concordance import UnoConcordanceResult, gonen_heller_cpe, uno_concordance_index
 from .cox import CoxPHResult, fit_cox_ph
 from .cox_diagnostics import (
     ProportionalHazardsTest,
@@ -148,6 +149,9 @@ __all__ = [
     "generate_cure_data",
     "mixture_cure_log_likelihood",
     "concordance_index",
+    "UnoConcordanceResult",
+    "gonen_heller_cpe",
+    "uno_concordance_index",
     "deviance_residuals",
     "martingale_residuals",
     "proportional_hazards_test",

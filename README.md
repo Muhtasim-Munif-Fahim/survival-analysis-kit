@@ -348,6 +348,25 @@ cure.posterior_cure_probability(d, e, x[:, None], x[:, None])
     python -m pytest tests -q
 
 
+## Simultaneous confidence bands (Hall-Wellner, equal precision)
+
+Pointwise Greenwood intervals cover `S(t)` at a single time; a plotted band
+should cover the whole curve. `km_confidence_band` gives the Hall-Wellner
+(1980) band (width `∝ 1 + n σ²(t)`) or Nair's (1984) equal-precision band
+(width `∝ σ(t)`) on `[t_L, t_U]`, in linear or log-log form (Klein &
+Moeschberger, section 4.4). Critical values come from exact grid simulation
+of the limiting Brownian-bridge / Ornstein-Uhlenbeck process with a
+continuity correction (`band_critical_value`; Hall-Wellner over the full
+range recovers the Kolmogorov quantile 1.358).
+
+```python
+from survival_kit import km_confidence_band
+
+band = km_confidence_band(durations, events, method="equal-precision", transform="log-log")
+band.critical_value, band.a_lower, band.a_upper
+band.time, band.lower, band.upper           # simultaneous 95% band
+```
+
 ## Conditional survival and mean residual life
 
 Given survival to a landmark `t0`, conditional survival is `S(t0+s)/S(t0)` and
